@@ -1,0 +1,26 @@
+# Git files
+.git
+.gitignore
+
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Environment variables
+.env*
+!/.env.example
+
+# Log files
+*.log
+npm-debug.log*
+
+# Editor directories and files
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

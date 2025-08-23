@@ -1,0 +1,29 @@
+# シングルページアプリケーション (SPA) 向け Nginx 設定テンプレート
+server {
+    # Cloud Runから提供されるPORT環境変数をリッスンします
+    # この${PORT}はコンテナ起動時にstart-nginx.shによって実際の値に置換されます
+    listen ${PORT};
+    server_name localhost;
+
+    # ドキュメントルート (静的ファイルが配置されている場所)
+    root /usr/share/nginx/html;
+
+    # デフォルトで探すファイル
+    index index.html index.htm;
+
+    # すべてのリクエストに対する処理
+    location / {
+        # まず、リクエストされたファイルやディレクトリが存在するか確認します
+        # (例: /index.html, /assets/main.js)
+        # 存在しない場合は、フォールバックとして /index.html を返します
+        # これにより、React Routerなどのクライアントサイドルーティングが
+        # ページリロード時にも正しく機能します (404エラーを防ぐ)
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 一般的なエラーページの設定
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+}
