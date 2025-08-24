@@ -339,6 +339,27 @@ const ArticleDetail: React.FC<{
 }> = ({ article, onBack, onEdit, onDelete }) => {
   const sanitizedHtml = DOMPurify.sanitize(marked(article.content) as string);
   
+  useEffect(() => {
+    const originalTitle = document.title;
+    const metaDescription = document.querySelector('meta[name="description"]');
+    const originalDescription = metaDescription ? metaDescription.getAttribute('content') : '';
+
+    // Update title and description for the article
+    document.title = `${article.title} | かしこいママの暮らしノート`;
+    const newDescription = article.content.substring(0, 120).replace(/\s+/g, ' ').trim() + '...';
+    if (metaDescription) {
+        metaDescription.setAttribute('content', newDescription);
+    }
+
+    // Cleanup function to restore original values when the component unmounts
+    return () => {
+      document.title = originalTitle;
+      if (metaDescription && originalDescription) {
+        metaDescription.setAttribute('content', originalDescription);
+      }
+    };
+  }, [article]);
+
   return (
     <div className="max-w-4xl mx-auto bg-white p-6 sm:p-10 rounded-2xl shadow-xl">
       <div className="flex flex-col sm:flex-row justify-between items-start mb-6 gap-4">
