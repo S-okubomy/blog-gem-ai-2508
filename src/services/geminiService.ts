@@ -25,7 +25,7 @@ const blogPostSchema = {
     },
     content: {
       type: Type.STRING,
-      description: "ブログ記事の本文。序論、本論、結論の構成で、段落ごとに改行(\\n)を入れてください。マークダウンは使用しないでください。",
+      description: "ブログ記事の本文。序論、本論、結論の構成で、読者が読みやすいように見出し(#)、リスト(-)、太字(**)などのマークダウンを積極的に使用してください。",
     },
   },
   required: ["title", "content"],
@@ -37,7 +37,7 @@ export const generateBlogPost = async (keyword: string): Promise<{ title: string
       model,
       contents: `キーワード「${keyword}」に関するアフィリエイトブログ記事を生成してください。`,
       config: {
-        systemInstruction: "あなたは、SEOとアフィリエイトマーケティングに精通したプロのコンテンツライターです。提供されたキーワードに基づき、読者の興味を引きつけ、検索エンジンで上位表示されやすい、高品質なブログ記事を生成してください。記事には、明確で魅力的なタイトルと、構造化された本文（序論、本論、結論）を含めてください。",
+        systemInstruction: "あなたは、SEOとアフィリエイトマーケティングに精通したプロのコンテンツライターです。提供されたキーワードに基づき、読者の興味を引きつけ、検索エンジンで上位表示されやすい、高品質なブログ記事を生成してください。記事には、明確で魅力的なタイトルと、構造化された本文（序論、本論、結論）を含めてください。本文は、見出し、箇条書きリスト、太字など、マークダウン形式を積極的に使用して読みやすくしてください。",
         responseMimeType: "application/json",
         responseSchema: blogPostSchema,
         temperature: 0.8,

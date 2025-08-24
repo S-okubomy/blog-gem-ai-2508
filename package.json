@@ -10,11 +10,16 @@
   },
   "dependencies": {
     "@google/genai": "^1.15.0",
+    "dompurify": "^3.1.5",
     "firebase": "10.12.2",
+    "marked": "^13.0.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.13",
+    "@types/dompurify": "^3.0.5",
+    "@types/marked": "^6.0.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

@@ -6,6 +6,8 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import { SparklesIcon, PublishIcon, RegenerateIcon, BackIcon, EditIcon, TrashIcon, HeartIcon, TagIcon, CalendarIcon } from './components/icons';
 import { useAuth } from './contexts/AuthContext';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 
 const App: React.FC = () => {
   const { isAdmin, loading: authLoading } = useAuth();
@@ -332,46 +334,51 @@ const ArticleDetail: React.FC<{
   onBack: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
-}> = ({ article, onBack, onEdit, onDelete }) => (
-  <div className="max-w-4xl mx-auto bg-white p-6 sm:p-10 rounded-2xl shadow-xl">
-    <div className="flex flex-col sm:flex-row justify-between items-start mb-6 gap-4">
-      <button onClick={onBack} className="flex-shrink-0 flex items-center px-4 py-2 text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors">
-        <BackIcon className="mr-2 h-4 w-4" />
-        記事一覧に戻る
-      </button>
-      <div className="flex flex-row gap-2 self-end sm:self-auto">
-          {onEdit && (
-            <button onClick={onEdit} className="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-rose-500 hover:bg-rose-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500">
-              <EditIcon className="mr-2 h-4 w-4" />
-              編集する
-            </button>
-          )}
-          {onDelete && (
-            <button onClick={onDelete} className="flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg shadow-sm text-white bg-stone-600 hover:bg-stone-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-500">
-              <TrashIcon className="mr-2 h-4 w-4" />
-              削除
-            </button>
-          )}
+}> = ({ article, onBack, onEdit, onDelete }) => {
+  const sanitizedHtml = DOMPurify.sanitize(marked(article.content) as string);
+  
+  return (
+    <div className="max-w-4xl mx-auto bg-white p-6 sm:p-10 rounded-2xl shadow-xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start mb-6 gap-4">
+        <button onClick={onBack} className="flex-shrink-0 flex items-center px-4 py-2 text-sm font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors">
+          <BackIcon className="mr-2 h-4 w-4" />
+          記事一覧に戻る
+        </button>
+        <div className="flex flex-row gap-2 self-end sm:self-auto">
+            {onEdit && (
+              <button onClick={onEdit} className="flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-rose-500 hover:bg-rose-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-500">
+                <EditIcon className="mr-2 h-4 w-4" />
+                編集する
+              </button>
+            )}
+            {onDelete && (
+              <button onClick={onDelete} className="flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg shadow-sm text-white bg-stone-600 hover:bg-stone-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-stone-500">
+                <TrashIcon className="mr-2 h-4 w-4" />
+                削除
+              </button>
+            )}
+        </div>
       </div>
+      <article>
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+           <span className="flex items-center gap-1.5 bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-semibold">
+             <TagIcon className="h-4 w-4" />
+             {article.keyword}
+           </span> 
+          <span className="flex items-center gap-1.5 text-stone-500 text-sm">
+            <CalendarIcon className="h-4 w-4" />
+            {new Date(article.createdAt).toLocaleDateString('ja-JP')}
+          </span>
+        </div>
+        <h1 className="mt-4 text-3xl sm:text-4xl font-extrabold text-rose-600 leading-tight">{article.title}</h1>
+        
+        <div
+          className="prose prose-rose max-w-none mt-8 text-lg text-stone-700 leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+        />
+      </article>
     </div>
-    <article>
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-         <span className="flex items-center gap-1.5 bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-semibold">
-           <TagIcon className="h-4 w-4" />
-           {article.keyword}
-         </span> 
-        <span className="flex items-center gap-1.5 text-stone-500 text-sm">
-          <CalendarIcon className="h-4 w-4" />
-          {new Date(article.createdAt).toLocaleDateString('ja-JP')}
-        </span>
-      </div>
-      <h1 className="mt-4 text-3xl sm:text-4xl font-extrabold text-rose-600 leading-tight">{article.title}</h1>
-      
-      <div className="mt-8 text-lg">
-        <p className="whitespace-pre-wrap text-stone-700 leading-relaxed">{article.content}</p>
-      </div>
-    </article>
-  </div>
-);
+  );
+};
 
 export default App;
