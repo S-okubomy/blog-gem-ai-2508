@@ -1,6 +1,7 @@
 # かしこいママの暮らしノート
 
 An application that generates affiliate blog posts from a keyword using the Google Gemini API, allowing users to review, edit, and publish them to a Firestore database.
+ [demo](https://www.mama-note.okbmk.com/)
 
 ## Features
 
