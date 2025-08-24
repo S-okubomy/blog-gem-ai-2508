@@ -8,6 +8,7 @@ import { SparklesIcon, PublishIcon, RegenerateIcon, BackIcon, EditIcon, TrashIco
 import { useAuth } from './contexts/AuthContext';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import AffiliateAd from './components/AffiliateAd';
 
 const App: React.FC = () => {
   const { isAdmin, loading: authLoading } = useAuth();
@@ -326,6 +327,7 @@ const ArticleList: React.FC<{
         ))}
       </div>
     )}
+    <AffiliateAd />
   </div>
 );
 
@@ -377,6 +379,7 @@ const ArticleDetail: React.FC<{
           dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
         />
       </article>
+      <AffiliateAd />
     </div>
   );
 };
