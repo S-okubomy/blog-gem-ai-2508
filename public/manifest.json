@@ -1,0 +1,16 @@
+{
+  "name": "かしこいママの暮らしノート",
+  "short_name": "ママノート",
+  "description": "知って得する暮らしのヒントや、育児の裏ワザなど、ママの毎日を応援する情報が満載のブログです。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fff7f5",
+  "theme_color": "#fecdd3",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

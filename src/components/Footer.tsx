@@ -1,6 +1,8 @@
 import React from 'react';
 
 const Footer: React.FC = () => {
+  const currentYear = new Date().getFullYear();
+
   return (
     <footer className="bg-rose-100 text-rose-800 text-sm mt-auto container mx-auto px-6 py-4 text-center">
       <p className="font-semibold">
@@ -8,6 +10,9 @@ const Footer: React.FC = () => {
       </p>
       <p className="mt-2">
         楽しみながらご覧いただけると嬉しいです！掲載された情報のご利用は、ご自身の判断と責任でお願いいたします♪
+      </p>
+      <p className="mt-4 text-xs text-rose-600">
+        &copy;{currentYear} okbmsyk
       </p>
     </footer>
   );
