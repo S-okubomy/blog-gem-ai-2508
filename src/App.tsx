@@ -4,6 +4,7 @@ import { generateBlogPost } from './services/geminiService';
 import { getArticles, addArticle, updateArticle, deleteArticle } from './services/firebaseService';
 import Header from './components/Header';
 import Footer from './components/Footer';
+import ShareButtons from './components/ShareButtons';
 import { SparklesIcon, PublishIcon, RegenerateIcon, BackIcon, EditIcon, TrashIcon, HeartIcon, TagIcon, CalendarIcon } from './components/icons';
 import { useAuth } from './contexts/AuthContext';
 import { marked } from 'marked';
@@ -38,6 +39,36 @@ const App: React.FC = () => {
     fetchArticles();
   }, [fetchArticles]);
   
+  // Handle hash-based routing
+  useEffect(() => {
+    const handleHashChange = () => {
+        if (articles.length === 0) return;
+
+        const hash = window.location.hash.substring(1);
+        if (hash.startsWith('article/')) {
+            const articleId = hash.split('/')[1];
+            const article = articles.find(a => a.id === articleId);
+            if (article) {
+                // Prevent interrupting admin actions
+                if (view !== 'editing' && view !== 'generating') {
+                    setCurrentArticle(article);
+                    setView('article');
+                }
+            } else {
+                window.location.hash = '';
+                setView('list');
+            }
+        }
+    };
+    
+    handleHashChange(); // Check hash on initial load/articles load
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+        window.removeEventListener('hashchange', handleHashChange);
+    };
+}, [articles, view]); // Rerun when articles are loaded or view changes
+
+
   useEffect(() => {
     // Redirect non-admins trying to access admin-only pages
     if (!authLoading && !isAdmin && (view === 'home' || view === 'editing')) {
@@ -103,6 +134,7 @@ const App: React.FC = () => {
                 await fetchArticles();
             }
             setView('list');
+            window.location.hash = '';
         } catch (err) {
             setError(err instanceof Error ? err.message : '記事の公開に失敗しました。');
         } finally {
@@ -123,6 +155,7 @@ const App: React.FC = () => {
         if (currentArticle?.id === articleId) {
             setCurrentArticle(null);
             setView('list');
+            window.location.hash = '';
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : '記事の削除に失敗しました。');
@@ -135,6 +168,7 @@ const App: React.FC = () => {
   const handleSelectArticle = (article: Article) => {
     setCurrentArticle(article);
     setView('article');
+    window.location.hash = `article/${article.id}`;
   };
 
   const handleEditArticle = (article: Article) => {
@@ -150,15 +184,36 @@ const App: React.FC = () => {
       alert('記事の作成は管理者のみ許可されています。');
       return;
     }
+    // Clear hash when navigating away from an article view
+    if (newView === 'list' || newView === 'home') {
+        if (window.location.hash) {
+            window.location.hash = '';
+        }
+    }
     setView(newView);
   };
+  
+  const handleBackFromEditor = () => {
+      setCurrentArticle(null);
+      // If we were editing an existing article, its hash might be in the URL.
+      // Go back to the list view and clear the hash.
+      if (isEditingExisting) {
+          setView('list');
+          window.location.hash = '';
+      } else {
+          // If it was a new article, just go back to the home/generator page.
+          setView('home');
+      }
+      setIsEditingExisting(false);
+  };
+
 
   const renderContent = () => {
-    if (authLoading) {
+    if (authLoading || (isListLoading && articles.length === 0)) {
       return (
         <div className="flex justify-center items-center py-10">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-rose-500"></div>
-            <span className="ml-4 text-gray-600">認証情報を読み込んでいます...</span>
+            <span className="ml-4 text-gray-600">{authLoading ? '認証情報を読み込んでいます...' : '記事を読み込んでいます...'}</span>
         </div>
       )
     }
@@ -167,11 +222,11 @@ const App: React.FC = () => {
       case 'generating':
         return isAdmin ? <LoadingScreen keyword={keyword} /> : null;
       case 'editing':
-        return isAdmin && currentArticle ? <ArticleEditor article={currentArticle} setArticle={setCurrentArticle} onPublish={handlePublish} onRegenerate={() => handleGenerate(keyword)} onBack={() => { setCurrentArticle(null); setView(isEditingExisting ? 'list' : 'home'); setIsEditingExisting(false); }} isNewArticle={!isEditingExisting} isLoading={isActionLoading} /> : null;
+        return isAdmin && currentArticle ? <ArticleEditor article={currentArticle} setArticle={setCurrentArticle} onPublish={handlePublish} onRegenerate={() => handleGenerate(keyword)} onBack={handleBackFromEditor} isNewArticle={!isEditingExisting} isLoading={isActionLoading} /> : null;
       case 'list':
         return <ArticleList articles={articles} onSelectArticle={handleSelectArticle} onDeleteArticle={isAdmin ? handleDelete : undefined} isLoading={isListLoading} />;
       case 'article':
-        return currentArticle ? <ArticleDetail article={currentArticle} onBack={() => { setCurrentArticle(null); setView('list'); }} onEdit={isAdmin ? () => handleEditArticle(currentArticle) : undefined} onDelete={isAdmin ? () => handleDelete(currentArticle.id) : undefined} /> : null;
+        return currentArticle ? <ArticleDetail article={currentArticle} onBack={() => { setCurrentArticle(null); setView('list'); window.location.hash = ''; }} onEdit={isAdmin ? () => handleEditArticle(currentArticle) : undefined} onDelete={isAdmin ? () => handleDelete(currentArticle.id) : undefined} /> : null;
       case 'home':
       default:
         if (!isAdmin) {
@@ -291,9 +346,12 @@ const ArticleList: React.FC<{
   isLoading: boolean;
 }> = ({ articles, onSelectArticle, onDeleteArticle, isLoading }) => (
   <div className="max-w-4xl mx-auto">
-    <h2 className="text-3xl font-bold mb-8 text-rose-500">
-      みんなの記事一覧
-    </h2>
+     <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+        <h2 className="text-3xl font-bold text-rose-500">
+          みんなの記事一覧
+        </h2>
+        <ShareButtons url={window.location.origin} title="かしこいママの暮らしノート｜知って得する暮らしのヒント" />
+      </div>
     {isLoading ? (
         <div className="flex justify-center items-center py-10">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-rose-500"></div>
@@ -383,17 +441,20 @@ const ArticleDetail: React.FC<{
         </div>
       </div>
       <article>
-        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
-           <span className="flex items-center gap-1.5 bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-semibold">
-             <TagIcon className="h-4 w-4" />
-             {article.keyword}
-           </span> 
-          <span className="flex items-center gap-1.5 text-stone-500 text-sm">
-            <CalendarIcon className="h-4 w-4" />
-            {new Date(article.createdAt).toLocaleDateString('ja-JP')}
-          </span>
-        </div>
         <h1 className="mt-4 text-3xl sm:text-4xl font-extrabold text-rose-600 leading-tight">{article.title}</h1>
+        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-rose-100 pb-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+               <span className="flex items-center gap-1.5 bg-rose-100 text-rose-800 px-3 py-1 rounded-full text-sm font-semibold">
+                 <TagIcon className="h-4 w-4" />
+                 {article.keyword}
+               </span> 
+              <span className="flex items-center gap-1.5 text-stone-500 text-sm">
+                <CalendarIcon className="h-4 w-4" />
+                {new Date(article.createdAt).toLocaleDateString('ja-JP')}
+              </span>
+            </div>
+            <ShareButtons url={window.location.href} title={article.title} />
+        </div>
         
         <div
           className="prose prose-rose max-w-none mt-8 text-lg text-stone-700 leading-relaxed"

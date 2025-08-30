@@ -65,3 +65,33 @@ export const CalendarIcon = ({ className }: { className?: string }) => (
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
     </svg>
 );
+
+export const LineIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M19.5 3.37c-1.4-1.4-3.3-2.1-5.4-2.1-2.2 0-4.3.8-5.9 2.3-1.6 1.4-2.6 3.4-2.9 5.5-.3 2.1 0 4.3.9 6.2.9 2 2.4 3.6 4.4 4.8 2 1.2 4.3 1.7 6.6 1.6 2.3 0 4.6-.7 6.4-2.1 1.9-1.4 3.1-3.5 3.5-5.8.4-2.3.1-4.7-.9-6.8s-2.7-3.9-4.7-5.1zm-1.1 12.1c-.2.2-.5.4-.7.5-.7.5-1.5.8-2.3.9-1.5.2-3.1-.2-4.3-1.1-.6-.4-1.1-.9-1.6-1.5l-.3-.4c-1-1.3-1.5-2.9-1.5-4.5 0-1.2.3-2.4.9-3.4s1.5-1.9 2.6-2.4c1.1-.5 2.3-.6 3.5-.4 1.2.2 2.3.8 3.2 1.6.9.8 1.5 1.9 1.7 3.1.2 1.2 0 2.5-.5 3.5-.2.5-.5.9-.9 1.3-.2.3-.5.5-.8.7zm-2.1-5.5h-1.6v1.6c0 .3-.3.6-.6.6s-.6-.3-.6-.6v-1.6h-1.6c-.3 0-.6-.3-.6-.6s.3-.6.6-.6h1.6V7.7c0-.3.3-.6.6-.6s.6.3.6.6v1.6h1.6c.3 0 .6.3.6.6s-.3.6-.6.6zm-5.4 0H7.7v1.6c0 .3-.3.6-.6.6s-.6-.3-.6-.6V10h-1.6c-.3 0-.6-.3-.6-.6s.3-.6.6-.6h1.6V7.7c0-.3.3-.6.6-.6s.6.3.6.6v1.6h1.6c.3 0 .6.3.6.6s-.3.6-.6.6z" />
+    </svg>
+);
+
+export const ShareIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 10H11a8 8 0 00-8 8v2m12-12l-4-4m4 4l-4 4" />
+    </svg>
+);
+
+export const CopyLinkIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+    </svg>
+);
+
+export const XIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+);
+
+export const FacebookIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+        <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" />
+    </svg>
+);
