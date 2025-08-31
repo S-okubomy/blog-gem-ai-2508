@@ -224,3 +224,9 @@ google consoleのリンクも確認して、画面に従う
 お名前.com Navi にログインして、「DNS関連機能の設定」に進みます。
 入力が完了したら、ページ下部の「確認画面へ進む」ボタンを押し、内容を確認してから「設定する」ボタンをクリックして完了
 ※10分以上かかるので、しばらく待ってから確認
+
+### 7. リクエスト制限
+GCPコンソール → 有効なAPIとサービス → 「Generative Language API」　をクリック  
+「割り当てとシステム制限」タブをクリック
+フィルターに「GenerateContent request limit per minute for a region (default)」 を入力  
+上限を変更
