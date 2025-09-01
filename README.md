@@ -1,6 +1,8 @@
 # かしこいママの暮らしノート
 
 An application that generates affiliate blog posts from a keyword using the Google Gemini API, allowing users to review, edit, and publish them to a Firestore database.  
+This project is a full-stack application with a React frontend and a Node.js (Express) backend.
+
  [demo](https://www.mama-note.okbmk.com/)
 
 ## Features
@@ -18,6 +20,7 @@ An application that generates affiliate blog posts from a keyword using the Goog
 ## Tech Stack
 
 - **Frontend**: [React](https://react.dev/) (with TypeScript)
+- **Backend**: [Node.js](https://nodejs.org/) / [Express](https://expressjs.com/)
 - **Build Tool**: [Vite](https://vitejs.dev/)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **AI Model**: [Google Gemini API](https://ai.google.dev/) (`@google/genai`)
@@ -100,19 +103,30 @@ node -v
 npm install
 ```
 
-### 4. Run the Development Server
+### 4. Run the Development Environment
 
+You will need to run the frontend and backend in two separate terminal windows.
+
+**Terminal 1: Start the backend server**
+```bash
+export API_KEY="YOUR Gemini API KEY"
+npm run dev:server
+```
+This will start the Express server, typically on `http://localhost:8080`.
+
+**Terminal 2: Start the frontend dev server**
 ```bash
 npm run dev
 ```
-
-The application should now be running on `http://localhost:5173` (or another port if 5173 is in use).
+This will start the Vite dev server, typically on `http://localhost:5173`. Open this URL in your browser. API requests from the frontend will be automatically proxied to your backend server.
 
 ## Available Scripts
 
-- `npm run dev`: Starts the development server.
-- `npm run build`: Builds the app for production.
-- `npm run preview`: Serves the production build locally.
+- `npm run dev`: Starts the frontend development server (Vite).
+- `npm run dev:server`: Starts the backend development server (Express with auto-reloading).
+- `npm run build`: Builds both the frontend and backend for production.
+- `npm run start`: Starts the production server (serves built files).
+- `npm run preview`: Serves the production frontend build locally for preview.
 
 ### 5. GCPへのデプロイ手順
 
@@ -175,7 +189,7 @@ gcloud artifacts repositories create my-app-repo \
 gcloud builds submit --config cloudbuild.yaml .
 
 #デプロイ
-gcloud run deploy kashikoi-mama-note --image us-west1-docker.pkg.dev/blog-mama-2508/my-app-repo/my-app:latest --platform managed --region us-west1 --allow-unauthenticated
+gcloud run deploy kashikoi-mama-note --image us-west1-docker.pkg.dev/blog-mama-2508/my-app-repo/ai-blog-app:latest --platform managed --region us-west1 --allow-unauthenticated
 ```
 
 #### 3：Firebaseの設定

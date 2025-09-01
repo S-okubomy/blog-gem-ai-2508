@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, PropsWithChildren } from 'react';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/auth';
 import { auth } from '../services/firebaseService';
@@ -16,7 +16,10 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
 });
 
-export const AuthProvider = ({ children }: { children: ReactNode }) => {
+// FIX: Use React.PropsWithChildren for typing the component props.
+// This resolves a TypeScript error where the `children` prop was incorrectly
+// being reported as missing when used in `src/index.tsx`.
+export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [user, setUser] = useState<firebase.User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -26,7 +29,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUser(currentUser);
       
       if (!ADMIN_EMAIL) {
-         console.warn("管理者メールアドレス(ADMIN_EMAIL)が.envファイルに設定されていません。");
+         console.warn("管理者メールアドレス(ADMIN_EMAIL)が.envファイルまたはビルド環境変数に設定されていません。");
          setIsAdmin(false);
       } else {
          setIsAdmin(currentUser?.email === ADMIN_EMAIL);

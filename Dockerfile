@@ -1,26 +1,19 @@
-# ==============================================================================
-# ステージ1: ビルド環境 (Node.js)
-# ==============================================================================
+# ===== ビルドステージ (Builder Stage) =====
 # 安定したLTSバージョンのNode.jsイメージをベースにします
-FROM node:24-alpine AS build
+FROM node:24-alpine AS builder
 
-# アプリケーションの作業ディレクトリを設定
+# 作業ディレクトリを設定
 WORKDIR /app
 
-# package.jsonとpackage-lock.json (またはyarn.lock) をコピー
+# まずは依存関係ファイルのみコピーして、キャッシュを有効活用
 COPY package*.json ./
-
-# 依存関係をインストール
-# CI=trueを指定することで、警告をエラーとして扱わず、インタラクティブなプロンプトを無効にします
-RUN npm install --ci
+# 依存関係をインストール (devDependenciesも含む)
+RUN npm install
 
 # アプリケーションのソースコードをすべてコピー
 COPY . .
 
-# --- ここからが本番環境用の環境変数設定です ---
-
-# Cloud Buildから渡されるビルド引数を定義します
-ARG API_KEY
+# ビルド時に外部から渡される引数を定義します (cloudbuild.yamlから渡されます)
 ARG FIREBASE_API_KEY
 ARG FIREBASE_AUTH_DOMAIN
 ARG FIREBASE_PROJECT_ID
@@ -29,10 +22,10 @@ ARG FIREBASE_MESSAGING_SENDER_ID
 ARG FIREBASE_APP_ID
 ARG ADMIN_EMAIL
 
-# ビルド引数を使って、コンテナ内に .env ファイルを生成します
-# これにより、Viteがビルド時にこれらの値を読み込みます
-RUN echo "API_KEY=${API_KEY}" > .env
-RUN echo "FIREBASE_API_KEY=${FIREBASE_API_KEY}" >> .env
+# ビルド引数を使って、コンテナ内に .env ファイルを生成します。
+# これにより、Viteがビルド時にこれらの値を読み込むことができます。
+# ★★★ 重要 ★★★: ここにはサーバーサイド専用のAPI_KEYは含めません。
+RUN echo "FIREBASE_API_KEY=${FIREBASE_API_KEY}" > .env
 RUN echo "FIREBASE_AUTH_DOMAIN=${FIREBASE_AUTH_DOMAIN}" >> .env
 RUN echo "FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID}" >> .env
 RUN echo "FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET}" >> .env
@@ -40,36 +33,26 @@ RUN echo "FIREBASE_MESSAGING_SENDER_ID=${FIREBASE_MESSAGING_SENDER_ID}" >> .env
 RUN echo "FIREBASE_APP_ID=${FIREBASE_APP_ID}" >> .env
 RUN echo "ADMIN_EMAIL=${ADMIN_EMAIL}" >> .env
 
-# アプリケーションを本番用にビルド
-# これにより `dist` フォルダが生成されます
+# フロントエンドとサーバーサイドをビルド
 RUN npm run build
 
-# ==============================================================================
-# ステージ2: 本番環境 (Nginx)
-# ==============================================================================
-# 軽量なWebサーバーであるNginxの公式イメージをベースにします
-FROM nginx:1.28-alpine
 
-# Cloud RunのPORT環境変数に対応するために必要なツール(gettext)と、改行コード変換ツール(dos2unix)をインストール
-# gettextパッケージにはenvsubstコマンドが含まれています
-RUN apk update && apk add --no-cache gettext dos2unix
+# ===== プロダクションステージ (Production Stage) =====
+# 安定したLTSバージョンのNode.jsイメージをベースにします
+FROM node:24-alpine
 
-# Nginx設定テンプレートと起動スクリプトをコピー
-COPY nginx.conf.template /etc/nginx/
-COPY start-nginx.sh /usr/local/bin/
+WORKDIR /app
 
-# 起動スクリプトの改行コードをWindows形式(CRLF)からUnix形式(LF)に変換
-RUN dos2unix /usr/local/bin/start-nginx.sh
+# ビルダーからビルド済みファイルと本番用の依存関係のみをコピー
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist-server ./dist-server
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
 
-# 起動スクリプトに実行権限を付与
-RUN chmod +x /usr/local/bin/start-nginx.sh
-
-# ビルドステージで生成された静的ファイルをNginxの配信フォルダにコピー
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# Cloud RunはコンテナにPORT環境変数を渡します。
-# start-nginx.shスクリプトが正しいポートでリッスンするように設定を動的に生成します。
+# Cloud Runがリッスンするポート番号 (8080) を公開
 EXPOSE 8080
+ENV PORT=8080
 
-# コンテナが起動したときにカスタムスクリプトを実行
-CMD ["/usr/local/bin/start-nginx.sh"]
+# アプリケーションを起動
+# `npm start` は `node dist-server/server.js` を実行します
+CMD ["npm", "start"]
