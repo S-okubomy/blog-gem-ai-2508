@@ -1,4 +1,5 @@
-// FIX: Import Request and Response types directly from express to avoid global type conflicts.
+// FIX: Changed import to use express namespace directly for Request and Response types to avoid conflict with global DOM types.
+// FIX: Import Request and Response types directly from express to resolve type conflicts.
 import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,7 +16,7 @@ const __dirname = path.dirname(__filename);
 app.use('/', express.json());
 
 // API route to generate blog post
-// FIX: Use imported Request and Response types for route handler parameters.
+// FIX: Explicitly use Request and Response types from express.
 app.post('/api/generate', async (req: Request, res: Response) => {
   const { keyword } = req.body;
 
@@ -61,7 +62,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       },
     });
     
-    // FIX: To resolve the TypeScript build error "TS18048: 'response.text' is possibly 'undefined'",
+    // To resolve the TypeScript build error "TS18048: 'response.text' is possibly 'undefined'",
     // we add a more explicit and robust type check. This ensures that we have a valid, non-empty string
     // from the Gemini API before attempting to parse it as JSON.
     const responseText = response?.text;
@@ -99,7 +100,7 @@ const staticPath = path.join(__dirname, '..', 'dist');
 app.use('/', express.static(staticPath));
 
 // The "catchall" handler for client-side routing
-// FIX: Use imported Request and Response types for route handler parameters.
+// FIX: Explicitly use Request and Response types from express.
 app.get('*', (req: Request, res: Response) => {
   res.sendFile(path.join(staticPath, 'index.html'));
 });

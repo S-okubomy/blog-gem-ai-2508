@@ -189,7 +189,7 @@ gcloud artifacts repositories create my-app-repo \
 gcloud builds submit --config cloudbuild.yaml .
 
 #デプロイ
-gcloud run deploy kashikoi-mama-note --image us-west1-docker.pkg.dev/blog-mama-2508/my-app-repo/ai-blog-app:latest --platform managed --region us-west1 --allow-unauthenticated
+gcloud run deploy kashikoi-mama-note --image us-west1-docker.pkg.dev/blog-mama-2508/my-app-repo/kashikoi-mama-note:latest --platform managed --region us-west1 --allow-unauthenticated
 ```
 
 #### 3：Firebaseの設定

@@ -48,6 +48,7 @@ steps:
       - '--platform=managed'
       - '--allow-unauthenticated' # サービスを公開する場合に設定
       - '--set-secrets=API_KEY=API_KEY:latest' # 実行時にGemini APIキーを環境変数として設定
+    secretEnv: ['API_KEY_SECRET'] # この行を追加してエラーを解決
 
 # ビルドが生成する最終的なイメージ
 images:
@@ -56,6 +57,9 @@ images:
 # ビルドプロセス中に利用可能にするSecret Managerのシークレット
 availableSecrets:
   secretManager:
+    # この`gemini-api-key`は、ステップ3のデプロイコマンドでのみ使用されます
+    - versionName: projects/$PROJECT_ID/secrets/API_KEY/versions/latest
+      env: 'API_KEY_SECRET' # This is used by the gcloud deploy step, NOT the build step.
     # 以下の変数は、ステップ1のビルドコマンドで使用されます
     - versionName: projects/$PROJECT_ID/secrets/FIREBASE_API_KEY/versions/latest
       env: 'FIREBASE_API_KEY_SECRET'
@@ -74,4 +78,4 @@ availableSecrets:
 
 # 置換可能な変数
 substitutions:
-  _SERVICE_NAME: 'ai-blog-app' # Cloud Runのサービス名（任意に変更可能）
+  _SERVICE_NAME: 'kashikoi-mama-note' # Cloud Runのサービス名（任意に変更可能）
