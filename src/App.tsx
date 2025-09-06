@@ -1,7 +1,7 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Article, View } from './types';
 import { generateBlogPost } from './services/geminiService';
-import { getArticles, addArticle, updateArticle, deleteArticle } from './services/firebaseService';
+import { getArticles, getArticlesCount, addArticle, updateArticle, deleteArticle, getArticleById } from './services/firebaseService';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import ShareButtons from './components/ShareButtons';
@@ -10,6 +10,7 @@ import { useAuth } from './contexts/AuthContext';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import AffiliateAd from './components/AffiliateAd';
+import firebase from 'firebase/compat/app';
 
 const App: React.FC = () => {
   const { isAdmin, loading: authLoading } = useAuth();
@@ -21,56 +22,128 @@ const App: React.FC = () => {
   const [isListLoading, setIsListLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isEditingExisting, setIsEditingExisting] = useState<boolean>(false);
+  const [refetchTrigger, setRefetchTrigger] = useState(0);
 
-  const fetchArticles = useCallback(async () => {
-    setIsListLoading(true);
-    setError(null);
-    try {
-      const fetchedArticles = await getArticles();
-      setArticles(fetchedArticles);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '記事の読み込みに失敗しました。');
-    } finally {
-      setIsListLoading(false);
-    }
-  }, []);
+  // Pagination state
+  const articlesPerPage = 20;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [pageStartCursors, setPageStartCursors] = useState<Map<number, firebase.firestore.QueryDocumentSnapshot | null>>(new Map([[1, null]]));
 
+
+  // Effect to fetch total articles count for pagination UI
   useEffect(() => {
-    fetchArticles();
-  }, [fetchArticles]);
-  
+    const fetchCount = async () => {
+        try {
+            const totalArticles = await getArticlesCount();
+            setTotalPages(Math.ceil(totalArticles / articlesPerPage) || 1);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : '記事の総数の取得に失敗しました。');
+        }
+    };
+    fetchCount();
+  }, [refetchTrigger]);
+
+
+  // Effect for fetching articles based on cursor pagination
+  useEffect(() => {
+    if (view !== 'list') return;
+
+    const fetchArticlesForPage = async () => {
+        if (!pageStartCursors.has(currentPage)) {
+            console.warn(`Cursor for page ${currentPage} not available. Cannot fetch.`);
+            // This might happen if trying to jump pages, which isn't supported.
+            // We can reset to page 1 as a fallback.
+            setCurrentPage(1);
+            return;
+        }
+
+        setIsListLoading(true);
+        setError(null);
+        try {
+            const cursor = pageStartCursors.get(currentPage)!;
+            const { articles: fetchedArticles, docs } = await getArticles(articlesPerPage, cursor);
+            setArticles(fetchedArticles);
+
+            // If we received articles, store the cursor for the start of the NEXT page.
+            // This allows us to navigate forward.
+            if (docs.length > 0) {
+                const nextCursor = docs[docs.length - 1];
+                if (!pageStartCursors.has(currentPage + 1)) {
+                    // Create a new map to trigger state update correctly
+                    setPageStartCursors(prevMap => new Map(prevMap.set(currentPage + 1, nextCursor)));
+                }
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : '記事の読み込みに失敗しました。');
+        } finally {
+            setIsListLoading(false);
+        }
+    };
+
+    fetchArticlesForPage();
+    // This effect should only run when the page or view changes.
+    // It should not depend on its own state setters (pageStartCursors).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, currentPage, refetchTrigger]);
+
   // Handle hash-based routing
   useEffect(() => {
-    const handleHashChange = () => {
-        if (articles.length === 0) return;
-
+    const handleHashChange = async () => {
         const hash = window.location.hash.substring(1);
         if (hash.startsWith('article/')) {
             const articleId = hash.split('/')[1];
-            const article = articles.find(a => a.id === articleId);
-            if (article) {
-                // Prevent interrupting admin actions
-                if (view !== 'editing' && view !== 'generating') {
-                    setCurrentArticle(article);
-                    setView('article');
+
+            // If we are trying to edit the currently viewed article, don't let this logic interfere.
+            if (view === 'editing' && currentArticle?.id === articleId) {
+                return;
+            }
+
+            try {
+                // Avoid re-fetching if the correct article is already loaded.
+                if (currentArticle?.id !== articleId) {
+                    setIsListLoading(true);
+                    const fetchedArticle = await getArticleById(articleId);
+                    if (fetchedArticle) {
+                        setCurrentArticle(fetchedArticle);
+                    } else {
+                        setError('指定された記事が見つかりませんでした。');
+                        window.location.hash = '';
+                        setView('list'); // Go to list if article not found
+                        return;
+                    }
                 }
-            } else {
+                setView('article'); // Ensure the view is correct
+            } catch (e) {
+                setError('記事の読み込みに失敗しました。');
                 window.location.hash = '';
                 setView('list');
+            } finally {
+                if (currentArticle?.id !== articleId) {
+                    setIsListLoading(false);
+                }
+            }
+        } else {
+            // If hash is cleared or invalid, go back to list view from any article-related page.
+            // This should not apply when we are editing a brand new, unsaved article.
+            if (view === 'article' || (view === 'editing' && isEditingExisting)) {
+                setView('list');
+                setCurrentArticle(null);
             }
         }
     };
     
-    handleHashChange(); // Check hash on initial load/articles load
+    // Initial check
+    handleHashChange();
+    
     window.addEventListener('hashchange', handleHashChange);
     return () => {
         window.removeEventListener('hashchange', handleHashChange);
     };
-}, [articles, view]); // Rerun when articles are loaded or view changes
-
+    // Re-run this effect if the view changes programmatically or if the specific article context changes.
+  }, [view, currentArticle?.id, isEditingExisting]);
 
   useEffect(() => {
-    // Redirect non-admins trying to access admin-only pages
     if (!authLoading && !isAdmin && (view === 'home' || view === 'editing')) {
       setView('list');
     }
@@ -96,11 +169,11 @@ const App: React.FC = () => {
     try {
       const { title, content } = await generateBlogPost(newKeyword);
       const newArticle: Article = {
-        id: '', // No ID from Firestore yet
+        id: '',
         title,
         content,
         keyword: newKeyword,
-        createdAt: new Date().toISOString(), // Placeholder, will be set by server
+        createdAt: new Date().toISOString(),
       };
       setCurrentArticle(newArticle);
       setIsEditingExisting(false);
@@ -112,7 +185,7 @@ const App: React.FC = () => {
       setIsActionLoading(false);
     }
   };
-
+  
   const handlePublish = async () => {
     if (currentArticle && isAdmin) {
         setIsActionLoading(true);
@@ -124,15 +197,18 @@ const App: React.FC = () => {
                     content: currentArticle.content,
                     keyword: currentArticle.keyword,
                 });
-                setArticles(articles.map(a => a.id === currentArticle.id ? currentArticle : a));
             } else {
                 await addArticle({
                     title: currentArticle.title,
                     content: currentArticle.content,
                     keyword: currentArticle.keyword,
                 });
-                await fetchArticles();
             }
+            // Reset pagination and trigger refetch
+            setCurrentPage(1);
+            setPageStartCursors(new Map([[1, null]]));
+            setRefetchTrigger(t => t + 1);
+            
             setView('list');
             window.location.hash = '';
         } catch (err) {
@@ -151,7 +227,11 @@ const App: React.FC = () => {
       setError(null);
       try {
         await deleteArticle(articleId);
-        setArticles(prev => prev.filter(a => a.id !== articleId));
+        // Force a refetch of everything. Resetting state is the cleanest way.
+        setCurrentPage(1);
+        setPageStartCursors(new Map([[1, null]]));
+        setRefetchTrigger(t => t + 1);
+
         if (currentArticle?.id === articleId) {
             setCurrentArticle(null);
             setView('list');
@@ -163,6 +243,13 @@ const App: React.FC = () => {
         setIsActionLoading(false);
       }
     }
+  };
+  
+  const handlePageChange = (page: number) => {
+      if (page >= 1 && page <= totalPages && pageStartCursors.has(page)) {
+          setCurrentPage(page);
+          window.scrollTo(0, 0); // Scroll to top on page change
+      }
   };
 
   const handleSelectArticle = (article: Article) => {
@@ -184,7 +271,6 @@ const App: React.FC = () => {
       alert('記事の作成は管理者のみ許可されています。');
       return;
     }
-    // Clear hash when navigating away from an article view
     if (newView === 'list' || newView === 'home') {
         if (window.location.hash) {
             window.location.hash = '';
@@ -195,13 +281,10 @@ const App: React.FC = () => {
   
   const handleBackFromEditor = () => {
       setCurrentArticle(null);
-      // If we were editing an existing article, its hash might be in the URL.
-      // Go back to the list view and clear the hash.
       if (isEditingExisting) {
           setView('list');
           window.location.hash = '';
       } else {
-          // If it was a new article, just go back to the home/generator page.
           setView('home');
       }
       setIsEditingExisting(false);
@@ -209,7 +292,7 @@ const App: React.FC = () => {
 
 
   const renderContent = () => {
-    if (authLoading || (isListLoading && articles.length === 0)) {
+    if (authLoading || (isListLoading && articles.length === 0 && view === 'list')) {
       return (
         <div className="flex justify-center items-center py-10">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-rose-500"></div>
@@ -224,14 +307,13 @@ const App: React.FC = () => {
       case 'editing':
         return isAdmin && currentArticle ? <ArticleEditor article={currentArticle} setArticle={setCurrentArticle} onPublish={handlePublish} onRegenerate={() => handleGenerate(keyword)} onBack={handleBackFromEditor} isNewArticle={!isEditingExisting} isLoading={isActionLoading} /> : null;
       case 'list':
-        return <ArticleList articles={articles} onSelectArticle={handleSelectArticle} onDeleteArticle={isAdmin ? handleDelete : undefined} isLoading={isListLoading} />;
+        return <ArticleList articles={articles} onSelectArticle={handleSelectArticle} onDeleteArticle={isAdmin ? handleDelete : undefined} isLoading={isListLoading} currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} hasNextPage={pageStartCursors.has(currentPage + 1) || articles.length === articlesPerPage} />;
       case 'article':
         return currentArticle ? <ArticleDetail article={currentArticle} onBack={() => { setCurrentArticle(null); setView('list'); window.location.hash = ''; }} onEdit={isAdmin ? () => handleEditArticle(currentArticle) : undefined} onDelete={isAdmin ? () => handleDelete(currentArticle.id) : undefined} /> : null;
       case 'home':
       default:
         if (!isAdmin) {
-          // Non-admins see the list view by default.
-           return <ArticleList articles={articles} onSelectArticle={handleSelectArticle} onDeleteArticle={undefined} isLoading={isListLoading} />;
+           return <ArticleList articles={articles} onSelectArticle={handleSelectArticle} onDeleteArticle={undefined} isLoading={isListLoading} currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} hasNextPage={pageStartCursors.has(currentPage + 1) || articles.length === articlesPerPage} />;
         }
         return <KeywordForm onGenerate={handleGenerate} isLoading={isActionLoading} />;
     }
@@ -339,12 +421,53 @@ const ArticleEditor: React.FC<{
     </div>
 )};
 
+const Pagination: React.FC<{
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  hasNextPage: boolean;
+}> = ({ currentPage, totalPages, onPageChange, hasNextPage }) => {
+
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  return (
+    <nav aria-label="記事のページネーション" className="flex justify-center items-center gap-4 mt-10">
+      <button
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="px-4 py-2 text-sm font-medium text-stone-600 bg-white rounded-md shadow-sm border border-stone-200 hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        前へ
+      </button>
+      
+      <span className="text-sm text-stone-600">
+        {totalPages > 0 ? `${currentPage} / ${totalPages}` : '0 / 0'} ページ
+      </span>
+      
+      <button
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages || !hasNextPage}
+        className="px-4 py-2 text-sm font-medium text-stone-600 bg-white rounded-md shadow-sm border border-stone-200 hover:bg-stone-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        次へ
+      </button>
+    </nav>
+  );
+};
+
+
 const ArticleList: React.FC<{
   articles: Article[];
   onSelectArticle: (article: Article) => void;
   onDeleteArticle?: (id: string) => void;
   isLoading: boolean;
-}> = ({ articles, onSelectArticle, onDeleteArticle, isLoading }) => (
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+  hasNextPage: boolean;
+}> = ({ articles, onSelectArticle, onDeleteArticle, isLoading, currentPage, totalPages, onPageChange, hasNextPage }) => (
   <div className="max-w-4xl mx-auto">
      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
         <h2 className="text-3xl font-bold text-rose-500">
@@ -352,7 +475,7 @@ const ArticleList: React.FC<{
         </h2>
         <ShareButtons url={window.location.origin} title="かしこいママの暮らしノート｜知って得する暮らしのヒント" />
       </div>
-    {isLoading ? (
+    {isLoading && articles.length === 0 ? (
         <div className="flex justify-center items-center py-10">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-rose-500"></div>
         </div>
@@ -363,27 +486,30 @@ const ArticleList: React.FC<{
         <p className="mt-2 text-stone-500">管理者の方は「新規作成」から、最初の記事を投稿してみましょう！</p>
       </div>
     ) : (
-      <div className="space-y-6">
-        {articles.map(article => (
-          <div key={article.id} className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow group relative">
-            <div onClick={() => onSelectArticle(article)} className="cursor-pointer">
-              <h3 className="text-2xl font-bold text-rose-600 group-hover:text-rose-700 transition-colors">{article.title}</h3>
-              <p className="mt-3 text-stone-600 line-clamp-2">{article.content}</p>
-              <div className="mt-4 flex items-center gap-3">
-                <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-semibold">{article.keyword}</span>
-                <span className="text-stone-400 text-xs">{new Date(article.createdAt).toLocaleDateString('ja-JP')}</span>
-              </div>
-            </div>
-            {onDeleteArticle && (
-                <div className="absolute top-4 right-4">
-                    <button onClick={(e) => { e.stopPropagation(); onDeleteArticle(article.id); }} className="p-2 text-stone-400 hover:text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/50 hover:bg-white" aria-label="記事を削除">
-                        <TrashIcon className="h-5 w-5" />
-                    </button>
+      <>
+        <div className="space-y-6">
+          {articles.map(article => (
+            <div key={article.id} className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow group relative">
+              <div onClick={() => onSelectArticle(article)} className="cursor-pointer">
+                <h3 className="text-2xl font-bold text-rose-600 group-hover:text-rose-700 transition-colors">{article.title}</h3>
+                <p className="mt-3 text-stone-600 line-clamp-2">{article.content}</p>
+                <div className="mt-4 flex items-center gap-3">
+                  <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-semibold">{article.keyword}</span>
+                  <span className="text-stone-400 text-xs">{new Date(article.createdAt).toLocaleDateString('ja-JP')}</span>
                 </div>
-            )}
-          </div>
-        ))}
-      </div>
+              </div>
+              {onDeleteArticle && (
+                  <div className="absolute top-4 right-4">
+                      <button onClick={(e) => { e.stopPropagation(); onDeleteArticle(article.id); }} className="p-2 text-stone-400 hover:text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/50 hover:bg-white" aria-label="記事を削除">
+                          <TrashIcon className="h-5 w-5" />
+                      </button>
+                  </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={onPageChange} hasNextPage={hasNextPage} />
+      </>
     )}
     <AffiliateAd />
   </div>
@@ -402,14 +528,12 @@ const ArticleDetail: React.FC<{
     const metaDescription = document.querySelector('meta[name="description"]');
     const originalDescription = metaDescription ? metaDescription.getAttribute('content') : '';
 
-    // Update title and description for the article
     document.title = `${article.title} | かしこいママの暮らしノート`;
     const newDescription = article.content.substring(0, 120).replace(/\s+/g, ' ').trim() + '...';
     if (metaDescription) {
         metaDescription.setAttribute('content', newDescription);
     }
 
-    // Cleanup function to restore original values when the component unmounts
     return () => {
       document.title = originalTitle;
       if (metaDescription && originalDescription) {
