@@ -98,6 +98,11 @@ const App: React.FC = () => {
             if (view === 'editing' && currentArticle?.id === articleId) {
                 return;
             }
+            
+            // Prevent this logic from interfering when we are generating a new article.
+            if (view === 'generating' || (view === 'editing' && !isEditingExisting)) {
+              return;
+            }
 
             try {
                 // Avoid re-fetching if the correct article is already loaded.
@@ -191,18 +196,16 @@ const App: React.FC = () => {
         setIsActionLoading(true);
         setError(null);
         try {
+            const articleData = {
+                title: currentArticle.title,
+                content: currentArticle.content,
+                keyword: currentArticle.keyword,
+            };
+
             if (isEditingExisting) {
-                await updateArticle(currentArticle.id, {
-                    title: currentArticle.title,
-                    content: currentArticle.content,
-                    keyword: currentArticle.keyword,
-                });
+                await updateArticle(currentArticle.id, articleData);
             } else {
-                await addArticle({
-                    title: currentArticle.title,
-                    content: currentArticle.content,
-                    keyword: currentArticle.keyword,
-                });
+                await addArticle(articleData);
             }
             // Reset pagination and trigger refetch
             setCurrentPage(1);
@@ -524,21 +527,56 @@ const ArticleDetail: React.FC<{
   const sanitizedHtml = DOMPurify.sanitize(marked(article.content) as string);
   
   useEffect(() => {
-    const originalTitle = document.title;
-    const metaDescription = document.querySelector('meta[name="description"]');
-    const originalDescription = metaDescription ? metaDescription.getAttribute('content') : '';
-
-    document.title = `${article.title} | かしこいママの暮らしノート`;
-    const newDescription = article.content.substring(0, 120).replace(/\s+/g, ' ').trim() + '...';
-    if (metaDescription) {
-        metaDescription.setAttribute('content', newDescription);
-    }
-
-    return () => {
-      document.title = originalTitle;
-      if (metaDescription && originalDescription) {
-        metaDescription.setAttribute('content', originalDescription);
+    // Helper to find and update a meta tag's content, and return its original value.
+    const setMetaContent = (selector: string, content: string): [Element | null, string | null] => {
+      const element = document.querySelector(selector);
+      const originalContent = element ? element.getAttribute('content') : null;
+      if (element) {
+        element.setAttribute('content', content);
       }
+      return [element, originalContent];
+    };
+
+    const getFirstImageUrlFromMarkdown = (markdown: string): string => {
+        const html = marked(markdown) as string;
+        const match = html.match(/<img[^>]+src="([^">]+)"/);
+        if (match && match[1]) {
+            // Ensure the URL is absolute
+            return new URL(match[1], window.location.origin).href;
+        }
+        // Fallback to the default site-wide image
+        return new URL('/og-image.png', window.location.origin).href;
+    };
+
+    const originalTitle = document.title;
+    const pageTitle = `${article.title} | かしこいママの暮らしノート`;
+    document.title = pageTitle;
+
+    const description = article.content.substring(0, 120).replace(/\s+/g, ' ').trim() + '...';
+    const pageUrl = window.location.href;
+    const imageUrl = getFirstImageUrlFromMarkdown(article.content);
+
+    // Update meta tags for this specific article and store their original values.
+    const originalValues: [Element | null, string | null][] = [
+      setMetaContent('meta[name="description"]', description),
+      setMetaContent('meta[property="og:title"]', pageTitle),
+      setMetaContent('meta[property="og:description"]', description),
+      setMetaContent('meta[property="og:type"]', 'article'),
+      setMetaContent('meta[property="og:url"]', pageUrl),
+      setMetaContent('meta[property="og:image"]', imageUrl),
+      setMetaContent('meta[property="twitter:title"]', pageTitle),
+      setMetaContent('meta[property="twitter:description"]', description),
+      setMetaContent('meta[property="twitter:image"]', imageUrl),
+    ];
+    
+    return () => {
+      // Restore original meta tags when the component unmounts.
+      document.title = originalTitle;
+      originalValues.forEach(([element, originalContent]) => {
+        if (element && originalContent !== null) {
+          element.setAttribute('content', originalContent);
+        }
+      });
     };
   }, [article]);
 

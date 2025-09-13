@@ -95,3 +95,33 @@ export const FacebookIcon = ({ className }: { className?: string }) => (
         <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" />
     </svg>
 );
+
+export const CherryBlossomIcon = ({ className }: { className?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" className={className}>
+        <defs>
+            <linearGradient id="petal-gradient" x1="0.5" y1="0" x2="0.5" y2="1">
+                <stop offset="0%" stopColor="#fecdd3" />
+                <stop offset="100%" stopColor="#f43f5e" />
+            </linearGradient>
+            <radialGradient id="center-gradient">
+                <stop offset="0%" stopColor="#fff" />
+                <stop offset="100%" stopColor="#f9a8d4" />
+            </radialGradient>
+        </defs>
+        <g fill="url(#petal-gradient)">
+            <path d="M256,0C111.6,134.4,142,216.5,256,256c114-39.5,144.4-121.6,0-256Z" />
+            <path d="M256,0C111.6,134.4,142,216.5,256,256c114-39.5,144.4-121.6,0-256Z" transform="rotate(72, 256, 256)" />
+            <path d="M256,0C111.6,134.4,142,216.5,256,256c114-39.5,144.4-121.6,0-256Z" transform="rotate(144, 256, 256)" />
+            <path d="M256,0C111.6,134.4,142,216.5,256,256c114-39.5,144.4-121.6,0-256Z" transform="rotate(216, 256, 256)" />
+            <path d="M256,0C111.6,134.4,142,216.5,256,256c114-39.5,144.4-121.6,0-256Z" transform="rotate(288, 256, 256)" />
+        </g>
+        <circle cx="256" cy="256" r="45" fill="url(#center-gradient)" />
+        <g stroke="#9f1239" strokeWidth="8" strokeLinecap="round">
+            <line x1="256" y1="256" x2="256" y2="196" transform="rotate(18, 256, 256)" />
+            <line x1="256" y1="256" x2="256" y2="196" transform="rotate(90, 256, 256)" />
+            <line x1="256" y1="256" x2="256" y2="196" transform="rotate(162, 256, 256)" />
+            <line x1="256" y1="256" x2="256" y2="196" transform="rotate(234, 256, 256)" />
+            <line x1="256" y1="256" x2="256" y2="196" transform="rotate(306, 256, 256)" />
+        </g>
+    </svg>
+);
