@@ -148,6 +148,37 @@ const App: React.FC = () => {
     // Re-run this effect if the view changes programmatically or if the specific article context changes.
   }, [view, currentArticle?.id, isEditingExisting]);
 
+  // Effect for setting meta tags for the homepage (list view)
+  useEffect(() => {
+    // Helper to find and update a meta tag's content.
+    const setMetaContent = (selector: string, content: string) => {
+      const element = document.querySelector(selector);
+      if (element) {
+        element.setAttribute('content', content);
+      }
+    };
+
+    // When the view is 'list', we ensure the meta tags are set for the homepage.
+    // This is important for the initial load and when navigating back from an article.
+    if (view === 'list') {
+      const rootUrl = window.location.origin + window.location.pathname.replace(/#.*$/, '');
+      const siteTitle = 'かしこいママの暮らしノート';
+      const siteDescription = '知って得する暮らしのヒントや、育児の裏ワザなど、ママの毎日を応援する情報が満載のブログです。';
+      const defaultImageUrl = new URL('/og-image.png', window.location.origin).href;
+
+      document.title = siteTitle;
+      setMetaContent('meta[property="og:url"]', rootUrl);
+      setMetaContent('meta[name="description"]', siteDescription);
+      setMetaContent('meta[property="og:title"]', siteTitle);
+      setMetaContent('meta[property="og:description"]', siteDescription);
+      setMetaContent('meta[property="og:type"]', 'website');
+      setMetaContent('meta[property="og:image"]', defaultImageUrl);
+      setMetaContent('meta[property="twitter:title"]', siteTitle);
+      setMetaContent('meta[property="twitter:description"]', siteDescription);
+      setMetaContent('meta[property="twitter:image"]', defaultImageUrl);
+    }
+  }, [view]);
+
   useEffect(() => {
     if (!authLoading && !isAdmin && (view === 'home' || view === 'editing')) {
       setView('list');
