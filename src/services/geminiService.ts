@@ -1,4 +1,6 @@
-export const generateBlogPost = async (keyword: string): Promise<{ title: string; content: string }> => {
+import type { Source } from '../types';
+
+export const generateBlogPost = async (keyword: string): Promise<{ title: string; content: string; sources: Source[] }> => {
   try {
     const response = await fetch('/api/generate', {
       method: 'POST',
@@ -15,7 +17,7 @@ export const generateBlogPost = async (keyword: string): Promise<{ title: string
 
     const data = await response.json();
     
-    if (typeof data.title === 'string' && typeof data.content === 'string') {
+    if (typeof data.title === 'string' && typeof data.content === 'string' && Array.isArray(data.sources)) {
       return data;
     } else {
       throw new Error("APIから無効なデータ構造を受け取りました。");

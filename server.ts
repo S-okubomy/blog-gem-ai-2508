@@ -1,9 +1,7 @@
-// FIX: Changed import to use express namespace directly for Request and Response types to avoid conflict with global DOM types.
-// FIX: Import Request and Response types directly from express to resolve type conflicts.
-import express, { Request, Response } from 'express';
+import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import 'dotenv/config';
 
 const app = express();
@@ -13,98 +11,82 @@ const port = process.env.PORT || 8080;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.use('/', express.json());
+(app.use as any)(express.json());
 
 // API route to generate blog post
-// FIX: Explicitly use Request and Response types from express.
-app.post('/api/generate', async (req: Request, res: Response) => {
+app.post('/api/generate', async (req: any, res: any) => {
   const { keyword } = req.body;
 
   if (!keyword || typeof keyword !== 'string') {
-    return res.status(400).json({ error: 'Keyword is required and must be a string.' });
+    return res.status(400).json({ error: 'キーワードは必須です。' });
   }
 
   // API_KEY must be set as an environment variable on the server
   const API_KEY = process.env.API_KEY;
   if (!API_KEY) {
     console.error('API_KEY environment variable not set.');
-    return res.status(500).json({ error: 'Server configuration error.' });
+    return res.status(500).json({ error: 'サーバーの設定にエラーがあります。管理者に連絡してください。' });
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const model = 'gemini-2.5-flash';
 
-    const blogPostSchema = {
-      type: Type.OBJECT,
-      properties: {
-        title: {
-          type: Type.STRING,
-          description: 'SEOに最適化された、魅力的でクリックしたくなるブログ記事のタイトル。',
-        },
-        content: {
-          type: Type.STRING,
-          description: 'ブログ記事の本文。序論、本論、結論の構成で、読者が読みやすいように見出し(#)、リスト(-)、太字(**)などのマークダウンを積極的に使用してください。',
-        },
-      },
-      required: ['title', 'content'],
-    };
-
     const response = await ai.models.generateContent({
       model,
-      contents: `キーワード「${keyword}」に関するアフィリエイトブログ記事を生成してください。`,
+      contents: `キーワード「${keyword}」に関するアフィリエイトブログ記事を、マークダウン形式で生成してください。最初の見出し（#）を記事のタイトルとしてください。`,
       config: {
-        systemInstruction: 'あなたは、SEOとアフィリエイトマーケティングに精通したプロのコンテンツライターです。提供されたキーワードに基づき、読者の興味を引きつけ、検索エンジンで上位表示されやすい、高品質なブログ記事を生成してください。記事には、明確で魅力的なタイトルと、構造化された本文（序論、本論、結論）を含めてください。本文は、見出し、箇条書きリスト、太字など、マークダウン形式を積極的に使用して読みやすくしてください。',
-        responseMimeType: 'application/json',
-        responseSchema: blogPostSchema,
-        temperature: 0.8,
-        topP: 0.95,
+        systemInstruction: 'あなたは、SEOとアフィリエイトマーケティングに精通したプロのコンテンツライターです。提供されたキーワードに基づき、読者の興味を引きつけ、検索エンジンで上位表示されやすい、高品質なブログ記事を生成してください。記事には、明確で魅力的なタイトルと、構造化された本文（序論、本論、結論）を含めてください。本文は、見出しや箇条書きを用いて、読者が情報を消化しやすいように整理してください。',
+        tools: [{googleSearch: {}}],
       },
     });
     
-    // To resolve the TypeScript build error "TS18048: 'response.text' is possibly 'undefined'",
-    // we add a more explicit and robust type check. This ensures that we have a valid, non-empty string
-    // from the Gemini API before attempting to parse it as JSON.
-    const responseText = response?.text;
-
-    if (typeof responseText !== 'string' || responseText.length === 0) {
-        console.error('Invalid or empty response text received from Gemini API:', response);
-        return res.status(500).json({ error: 'AIから有効なテキスト応答を受け取れませんでした。' });
-    }
+    const responseText = response.text;
     
-    // Now TypeScript is certain that responseText is a non-empty string.
-    const jsonText = responseText.trim();
-    let parsed;
-    try {
-      parsed = JSON.parse(jsonText);
-    } catch (parseError) {
-      console.error('Failed to parse JSON response from Gemini:', jsonText);
-      return res.status(500).json({ error: 'AIから予期しない形式の応答がありました。' });
+    // Robust validation for the API response
+    if (typeof responseText !== 'string' || responseText.trim() === '') {
+        console.error('Gemini API returned an empty or invalid response text.');
+        throw new Error('AIが有効な応答を生成できませんでした。');
     }
 
-    if (typeof parsed.title === 'string' && typeof parsed.content === 'string') {
-      res.status(200).json(parsed);
-    } else {
-      console.error('Invalid JSON structure received from API:', parsed);
-      return res.status(500).json({ error: 'AIが生成したデータの構造が正しくありません。' });
+    // --- Parse Markdown response ---
+    const lines = responseText.split('\n');
+    let title = `「${keyword}」について`; // Default title
+    let content = responseText;
+    
+    const titleIndex = lines.findIndex(line => line.startsWith('# '));
+    if (titleIndex !== -1) {
+      title = lines[titleIndex].substring(2).trim();
+      content = lines.slice(titleIndex + 1).join('\n').trim();
     }
+    // --- ---
+
+    // --- Extract grounding sources ---
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sources = groundingChunks.map((chunk: any) => ({
+      uri: chunk.web.uri,
+      title: chunk.web.title,
+    })).filter((source: any) => source.uri && source.title);
+    // --- ---
+
+    res.json({ title, content, sources });
+
   } catch (error) {
-    console.error('Error generating blog post:', error);
-    res.status(500).json({ error: 'AIによる記事の生成中にエラーが発生しました。' });
+    console.error('Error calling Gemini API:', error);
+    const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+    res.status(500).json({ error: `記事の生成中にエラーが発生しました: ${errorMessage}` });
   }
 });
 
-// Serve static files from the React app build directory
-// The server file will be in dist-server, so we go up one level to find the 'dist' folder
-const staticPath = path.join(__dirname, '..', 'dist');
-app.use('/', express.static(staticPath));
+// Serve static files from the React app
+(app.use as any)(express.static(path.join(__dirname, '../dist')));
 
-// The "catchall" handler for client-side routing
-// FIX: Explicitly use Request and Response types from express.
-app.get('*', (req: Request, res: Response) => {
-  res.sendFile(path.join(staticPath, 'index.html'));
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+(app.get as any)('*', (req: any, res: any) => {
+  res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
+  console.log(`Server listening on port ${port}`);
 });

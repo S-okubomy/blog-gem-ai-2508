@@ -16,9 +16,6 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
 });
 
-// FIX: Use React.PropsWithChildren for typing the component props.
-// This resolves a TypeScript error where the `children` prop was incorrectly
-// being reported as missing when used in `src/index.tsx`.
 export const AuthProvider = ({ children }: PropsWithChildren) => {
   const [user, setUser] = useState<firebase.User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);

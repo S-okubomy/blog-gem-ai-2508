@@ -66,6 +66,12 @@ export const CalendarIcon = ({ className }: { className?: string }) => (
     </svg>
 );
 
+export const ExternalLinkIcon = ({ className }: { className?: string }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+  </svg>
+);
+
 export const LineIcon = ({ className }: { className?: string }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className} fill="currentColor">
       <path d="M19.5 3.37c-1.4-1.4-3.3-2.1-5.4-2.1-2.2 0-4.3.8-5.9 2.3-1.6 1.4-2.6 3.4-2.9 5.5-.3 2.1 0 4.3.9 6.2.9 2 2.4 3.6 4.4 4.8 2 1.2 4.3 1.7 6.6 1.6 2.3 0 4.6-.7 6.4-2.1 1.9-1.4 3.1-3.5 3.5-5.8.4-2.3.1-4.7-.9-6.8s-2.7-3.9-4.7-5.1zm-1.1 12.1c-.2.2-.5.4-.7.5-.7.5-1.5.8-2.3.9-1.5.2-3.1-.2-4.3-1.1-.6-.4-1.1-.9-1.6-1.5l-.3-.4c-1-1.3-1.5-2.9-1.5-4.5 0-1.2.3-2.4.9-3.4s1.5-1.9 2.6-2.4c1.1-.5 2.3-.6 3.5-.4 1.2.2 2.3.8 3.2 1.6.9.8 1.5 1.9 1.7 3.1.2 1.2 0 2.5-.5 3.5-.2.5-.5.9-.9 1.3-.2.3-.5.5-.8.7zm-2.1-5.5h-1.6v1.6c0 .3-.3.6-.6.6s-.6-.3-.6-.6v-1.6h-1.6c-.3 0-.6-.3-.6-.6s.3-.6.6-.6h1.6V7.7c0-.3.3-.6.6-.6s.6.3.6.6v1.6h1.6c.3 0 .6.3.6.6s-.3.6-.6.6zm-5.4 0H7.7v1.6c0 .3-.3.6-.6.6s-.6-.3-.6-.6V10h-1.6c-.3 0-.6-.3-.6-.6s.3-.6.6-.6h1.6V7.7c0-.3.3-.6.6-.6s.6.3.6.6v1.6h1.6c.3 0 .6.3.6.6s-.3.6-.6.6z" />

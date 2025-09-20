@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import type { Article, View } from './types';
+
+import React, { useState, useEffect, useMemo } from 'react';
+import type { Article, View, Source } from './types';
 import { generateBlogPost } from './services/geminiService';
 import { getArticles, getArticlesCount, addArticle, updateArticle, deleteArticle, getArticleById } from './services/firebaseService';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import ShareButtons from './components/ShareButtons';
-import { SparklesIcon, PublishIcon, RegenerateIcon, BackIcon, EditIcon, TrashIcon, HeartIcon, TagIcon, CalendarIcon } from './components/icons';
+import { SparklesIcon, PublishIcon, RegenerateIcon, BackIcon, EditIcon, TrashIcon, HeartIcon, TagIcon, CalendarIcon, ExternalLinkIcon } from './components/icons';
 import { useAuth } from './contexts/AuthContext';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -203,11 +204,13 @@ const App: React.FC = () => {
     setIsActionLoading(true);
     setError(null);
     try {
-      const { title, content } = await generateBlogPost(newKeyword);
+      const { title, content, sources } = await generateBlogPost(newKeyword);
       const newArticle: Article = {
         id: '',
+        _tempId: `temp_${Date.now()}`,
         title,
         content,
+        sources,
         keyword: newKeyword,
         createdAt: new Date().toISOString(),
       };
@@ -231,6 +234,7 @@ const App: React.FC = () => {
                 title: currentArticle.title,
                 content: currentArticle.content,
                 keyword: currentArticle.keyword,
+                sources: currentArticle.sources || [],
             };
 
             if (isEditingExisting) {
@@ -339,7 +343,7 @@ const App: React.FC = () => {
       case 'generating':
         return isAdmin ? <LoadingScreen keyword={keyword} /> : null;
       case 'editing':
-        return isAdmin && currentArticle ? <ArticleEditor article={currentArticle} setArticle={setCurrentArticle} onPublish={handlePublish} onRegenerate={() => handleGenerate(keyword)} onBack={handleBackFromEditor} isNewArticle={!isEditingExisting} isLoading={isActionLoading} /> : null;
+        return isAdmin && currentArticle ? <ArticleEditor key={currentArticle.id || currentArticle._tempId} article={currentArticle} setArticle={setCurrentArticle} onPublish={handlePublish} onRegenerate={() => handleGenerate(keyword)} onBack={handleBackFromEditor} isNewArticle={!isEditingExisting} isLoading={isActionLoading} /> : null;
       case 'list':
         return <ArticleList articles={articles} onSelectArticle={handleSelectArticle} onDeleteArticle={isAdmin ? handleDelete : undefined} isLoading={isListLoading} currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} hasNextPage={pageStartCursors.has(currentPage + 1) || articles.length === articlesPerPage} />;
       case 'article':
@@ -423,6 +427,34 @@ const ArticleEditor: React.FC<{
 }> = ({ article, setArticle, onPublish, onRegenerate, onBack, isNewArticle, isLoading }) => {
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => setArticle(prev => prev ? { ...prev, title: e.target.value } : null);
     const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => setArticle(prev => prev ? { ...prev, content: e.target.value } : null);
+    
+    const [sourcesMarkdown, setSourcesMarkdown] = useState('');
+
+    useEffect(() => {
+      const newMarkdown = article.sources ? article.sources.map(s => `[${s.title}](${s.uri})`).join('\n') : '';
+      setSourcesMarkdown(newMarkdown);
+    // This effect ensures the textarea is updated when the article being edited changes.
+    }, [article.id, article._tempId]);
+
+    const handleSourcesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const text = e.target.value;
+        // 1. Update the local state for the textarea to ensure responsive input
+        setSourcesMarkdown(text);
+
+        // 2. Parse the text and update the parent component's article state
+        const lines = text.split('\n').filter(line => line.trim() !== '');
+        const newSources: Source[] = lines.map(line => {
+            // Match [title](url)
+            const match = line.match(/\[(.*?)]\((.*?)\)/);
+            if (match && match[1] && match[2]) {
+                return { title: match[1].trim(), uri: match[2].trim() };
+            }
+            return null;
+        }).filter((s): s is Source => s !== null); // Filter out nulls
+        
+        setArticle(prev => prev ? { ...prev, sources: newSources } : null);
+    };
+
     return (
     <div className="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-lg">
         <h2 className="text-2xl font-bold mb-4">{isNewArticle ? '生成された記事の確認・編集' : '記事の編集'}</h2>
@@ -434,6 +466,18 @@ const ArticleEditor: React.FC<{
             <div>
                 <label htmlFor="content" className="block text-sm font-medium text-gray-700">本文</label>
                 <textarea id="content" value={article.content} onChange={handleContentChange} rows={20} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-rose-500 focus:border-rose-500 sm:text-sm whitespace-pre-wrap" />
+            </div>
+            <div>
+                <label htmlFor="sources" className="block text-sm font-medium text-gray-700">参考にしたサイト</label>
+                <p className="text-xs text-gray-500 mb-1">各行に `[タイトル](URL)` の形式で入力してください。</p>
+                <textarea 
+                  id="sources" 
+                  value={sourcesMarkdown} 
+                  onChange={handleSourcesChange} 
+                  rows={5} 
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-rose-500 focus:border-rose-500 sm:text-sm whitespace-pre-wrap font-mono"
+                  placeholder="[Google](https://www.google.com)&#10;[スマートニュース](https://www.smartnews.com/)"
+                />
             </div>
         </div>
         <div className="mt-8 flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -654,6 +698,28 @@ const ArticleDetail: React.FC<{
           dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
         />
       </article>
+
+      {article.sources && article.sources.length > 0 && (
+        <section className="mt-12 pt-8 border-t border-rose-200">
+          <h2 className="text-xl font-bold text-stone-700 mb-4">参考にしたサイト</h2>
+          <ul className="space-y-3">
+            {article.sources.map((source: Source, index: number) => (
+              <li key={index} className="flex items-start">
+                <ExternalLinkIcon className="flex-shrink-0 h-5 w-5 text-rose-400 mt-1 mr-3" />
+                <a 
+                  href={source.uri} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-rose-600 hover:underline hover:text-rose-700 transition-colors break-all"
+                >
+                  {source.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <AffiliateAd />
     </div>
   );
