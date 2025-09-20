@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import type { Article, View, Source } from './types';
 import { generateBlogPost } from './services/geminiService';
 import { getArticles, getArticlesCount, addArticle, updateArticle, deleteArticle, getArticleById } from './services/firebaseService';
@@ -25,12 +26,54 @@ const App: React.FC = () => {
   const [isEditingExisting, setIsEditingExisting] = useState<boolean>(false);
   const [refetchTrigger, setRefetchTrigger] = useState(0);
 
+  const [path, setPath] = useState(window.location.pathname);
+
   // Pagination state
   const articlesPerPage = 20;
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [pageStartCursors, setPageStartCursors] = useState<Map<number, firebase.firestore.QueryDocumentSnapshot | null>>(new Map([[1, null]]));
 
+  // Handle redirect from old hash-based URLs on initial load
+  useEffect(() => {
+    const hash = window.location.hash;
+    let newPath: string | null = null;
+
+    if (hash.startsWith('#/article/')) {
+      const articleId = hash.substring('#/article/'.length);
+      newPath = `/article/${articleId}`;
+    } else if (hash.startsWith('#/edit/')) {
+      const articleId = hash.substring('#/edit/'.length);
+      newPath = `/edit/${articleId}`;
+    } else if (hash === '#/new') {
+      newPath = '/new';
+    }
+
+    if (newPath) {
+      // Use replaceState to avoid adding the old URL to the browser's history.
+      // This makes the URL change seamless for the user.
+      window.history.replaceState(null, '', newPath);
+      setPath(newPath); // Update the internal state to trigger routing.
+    }
+  }, []); // Empty dependency array ensures this runs only once on initial render.
+
+
+  const navigate = useCallback((newPath: string) => {
+    if (window.location.pathname !== newPath) {
+      window.history.pushState({}, '', newPath);
+    }
+    setPath(newPath);
+    window.scrollTo(0, 0); // Scroll to top on navigation
+  }, []);
+
+  // Effect to handle browser back/forward buttons
+  useEffect(() => {
+    const onPopState = () => {
+      setPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   // Effect to fetch total articles count for pagination UI
   useEffect(() => {
@@ -52,9 +95,6 @@ const App: React.FC = () => {
 
     const fetchArticlesForPage = async () => {
         if (!pageStartCursors.has(currentPage)) {
-            console.warn(`Cursor for page ${currentPage} not available. Cannot fetch.`);
-            // This might happen if trying to jump pages, which isn't supported.
-            // We can reset to page 1 as a fallback.
             setCurrentPage(1);
             return;
         }
@@ -66,12 +106,9 @@ const App: React.FC = () => {
             const { articles: fetchedArticles, docs } = await getArticles(articlesPerPage, cursor);
             setArticles(fetchedArticles);
 
-            // If we received articles, store the cursor for the start of the NEXT page.
-            // This allows us to navigate forward.
             if (docs.length > 0) {
                 const nextCursor = docs[docs.length - 1];
                 if (!pageStartCursors.has(currentPage + 1)) {
-                    // Create a new map to trigger state update correctly
                     setPageStartCursors(prevMap => new Map(prevMap.set(currentPage + 1, nextCursor)));
                 }
             }
@@ -83,86 +120,87 @@ const App: React.FC = () => {
     };
 
     fetchArticlesForPage();
-    // This effect should only run when the page or view changes.
-    // It should not depend on its own state setters (pageStartCursors).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, currentPage, refetchTrigger]);
 
-  // Handle hash-based routing
+  // Path-based routing logic
   useEffect(() => {
-    const handleHashChange = async () => {
-        const hash = window.location.hash.substring(1);
-        if (hash.startsWith('article/')) {
-            const articleId = hash.split('/')[1];
+    const handleRouteChange = async () => {
+      const pathSegments = path.split('/').filter(Boolean);
 
-            // If we are trying to edit the currently viewed article, don't let this logic interfere.
-            if (view === 'editing' && currentArticle?.id === articleId) {
-                return;
-            }
-            
-            // Prevent this logic from interfering when we are generating a new article.
-            if (view === 'generating' || (view === 'editing' && !isEditingExisting)) {
-              return;
-            }
-
-            try {
-                // Avoid re-fetching if the correct article is already loaded.
-                if (currentArticle?.id !== articleId) {
-                    setIsListLoading(true);
-                    const fetchedArticle = await getArticleById(articleId);
-                    if (fetchedArticle) {
-                        setCurrentArticle(fetchedArticle);
-                    } else {
-                        setError('指定された記事が見つかりませんでした。');
-                        window.location.hash = '';
-                        setView('list'); // Go to list if article not found
-                        return;
-                    }
-                }
-                setView('article'); // Ensure the view is correct
-            } catch (e) {
-                setError('記事の読み込みに失敗しました。');
-                window.location.hash = '';
-                setView('list');
-            } finally {
-                if (currentArticle?.id !== articleId) {
-                    setIsListLoading(false);
-                }
-            }
-        } else {
-            // If hash is cleared or invalid, go back to list view from any article-related page.
-            // This should not apply when we are editing a brand new, unsaved article.
-            if (view === 'article' || (view === 'editing' && isEditingExisting)) {
-                setView('list');
-                setCurrentArticle(null);
-            }
+      if (path.startsWith('/article/')) {
+        const articleId = pathSegments[1];
+        if (currentArticle?.id === articleId && view === 'article') return;
+        
+        setIsListLoading(true);
+        try {
+          const fetchedArticle = await getArticleById(articleId);
+          if (fetchedArticle) {
+            setCurrentArticle(fetchedArticle);
+            setView('article');
+          } else {
+            setError('指定された記事が見つかりませんでした。');
+            navigate('/');
+          }
+        } catch (e) {
+          setError('記事の読み込みに失敗しました。');
+          navigate('/');
+        } finally {
+          setIsListLoading(false);
         }
+      } else if (path.startsWith('/edit/')) {
+        const articleId = pathSegments[1];
+        if (!isAdmin) {
+          navigate('/');
+          return;
+        }
+        if (currentArticle?.id === articleId && view === 'editing') return;
+
+        setIsListLoading(true);
+        try {
+          const fetchedArticle = await getArticleById(articleId);
+          if (fetchedArticle) {
+            setCurrentArticle(fetchedArticle);
+            setKeyword(fetchedArticle.keyword);
+            setIsEditingExisting(true);
+            setView('editing');
+          } else {
+            setError('指定された記事が見つかりませんでした。');
+            navigate('/');
+          }
+        } catch (e) {
+          setError('記事の読み込みに失敗しました。');
+          navigate('/');
+        } finally {
+          setIsListLoading(false);
+        }
+      } else if (path === '/new') {
+        if (!isAdmin) {
+          navigate('/');
+          return;
+        }
+        setCurrentArticle(null);
+        setView('home');
+      } else { // Default to list view
+        if (view !== 'list') {
+            setCurrentArticle(null);
+            setView('list');
+        }
+      }
     };
-    
-    // Initial check
-    handleHashChange();
-    
-    window.addEventListener('hashchange', handleHashChange);
-    return () => {
-        window.removeEventListener('hashchange', handleHashChange);
-    };
-    // Re-run this effect if the view changes programmatically or if the specific article context changes.
-  }, [view, currentArticle?.id, isEditingExisting]);
+
+    handleRouteChange();
+  }, [path, isAdmin, navigate]);
 
   // Effect for setting meta tags for the homepage (list view)
   useEffect(() => {
-    // Helper to find and update a meta tag's content.
     const setMetaContent = (selector: string, content: string) => {
       const element = document.querySelector(selector);
       if (element) {
         element.setAttribute('content', content);
       }
     };
-
-    // When the view is 'list', we ensure the meta tags are set for the homepage.
-    // This is important for the initial load and when navigating back from an article.
-    if (view === 'list') {
-      const rootUrl = window.location.origin + window.location.pathname.replace(/#.*$/, '');
+    if (view === 'list' || view === 'home') {
+      const rootUrl = window.location.origin;
       const siteTitle = 'かしこいママの暮らしノート';
       const siteDescription = '知って得する暮らしのヒントや、育児の裏ワザなど、ママの毎日を応援する情報が満載のブログです。';
       const defaultImageUrl = new URL('/og-image.png', window.location.origin).href;
@@ -179,12 +217,6 @@ const App: React.FC = () => {
       setMetaContent('meta[property="twitter:image"]', defaultImageUrl);
     }
   }, [view]);
-
-  useEffect(() => {
-    if (!authLoading && !isAdmin && (view === 'home' || view === 'editing')) {
-      setView('list');
-    }
-  }, [view, isAdmin, authLoading]);
 
   useEffect(() => {
     if (error) {
@@ -242,13 +274,11 @@ const App: React.FC = () => {
             } else {
                 await addArticle(articleData);
             }
-            // Reset pagination and trigger refetch
             setCurrentPage(1);
             setPageStartCursors(new Map([[1, null]]));
             setRefetchTrigger(t => t + 1);
             
-            setView('list');
-            window.location.hash = '';
+            navigate('/');
         } catch (err) {
             setError(err instanceof Error ? err.message : '記事の公開に失敗しました。');
         } finally {
@@ -265,15 +295,12 @@ const App: React.FC = () => {
       setError(null);
       try {
         await deleteArticle(articleId);
-        // Force a refetch of everything. Resetting state is the cleanest way.
         setCurrentPage(1);
         setPageStartCursors(new Map([[1, null]]));
         setRefetchTrigger(t => t + 1);
 
-        if (currentArticle?.id === articleId) {
-            setCurrentArticle(null);
-            setView('list');
-            window.location.hash = '';
+        if (path.includes(articleId)) {
+          navigate('/');
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : '記事の削除に失敗しました。');
@@ -286,51 +313,33 @@ const App: React.FC = () => {
   const handlePageChange = (page: number) => {
       if (page >= 1 && page <= totalPages && pageStartCursors.has(page)) {
           setCurrentPage(page);
-          window.scrollTo(0, 0); // Scroll to top on page change
+          window.scrollTo(0, 0);
       }
   };
 
   const handleSelectArticle = (article: Article) => {
-    setCurrentArticle(article);
-    setView('article');
-    window.location.hash = `article/${article.id}`;
+    navigate(`/article/${article.id}`);
   };
 
   const handleEditArticle = (article: Article) => {
     if (!isAdmin) return;
-    setCurrentArticle(article);
-    setKeyword(article.keyword);
-    setIsEditingExisting(true);
-    setView('editing');
-  };
-
-  const handleSetView = (newView: View) => {
-    if (newView === 'home' && !isAdmin) {
-      alert('記事の作成は管理者のみ許可されています。');
-      return;
-    }
-    if (newView === 'list' || newView === 'home') {
-        if (window.location.hash) {
-            window.location.hash = '';
-        }
-    }
-    setView(newView);
+    navigate(`/edit/${article.id}`);
   };
   
   const handleBackFromEditor = () => {
+      const previousArticleId = currentArticle?.id;
       setCurrentArticle(null);
-      if (isEditingExisting) {
-          setView('list');
-          window.location.hash = '';
+      if (isEditingExisting && previousArticleId) {
+          navigate(`/article/${previousArticleId}`);
       } else {
-          setView('home');
+          navigate('/new');
       }
       setIsEditingExisting(false);
   };
 
 
   const renderContent = () => {
-    if (authLoading || (isListLoading && articles.length === 0 && view === 'list')) {
+    if (authLoading || (isListLoading && view !== 'editing')) {
       return (
         <div className="flex justify-center items-center py-10">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-rose-500"></div>
@@ -347,7 +356,7 @@ const App: React.FC = () => {
       case 'list':
         return <ArticleList articles={articles} onSelectArticle={handleSelectArticle} onDeleteArticle={isAdmin ? handleDelete : undefined} isLoading={isListLoading} currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} hasNextPage={pageStartCursors.has(currentPage + 1) || articles.length === articlesPerPage} />;
       case 'article':
-        return currentArticle ? <ArticleDetail article={currentArticle} onBack={() => { setCurrentArticle(null); setView('list'); window.location.hash = ''; }} onEdit={isAdmin ? () => handleEditArticle(currentArticle) : undefined} onDelete={isAdmin ? () => handleDelete(currentArticle.id) : undefined} /> : null;
+        return currentArticle ? <ArticleDetail article={currentArticle} onBack={() => navigate('/')} onEdit={isAdmin ? () => handleEditArticle(currentArticle) : undefined} onDelete={isAdmin ? () => handleDelete(currentArticle.id) : undefined} /> : null;
       case 'home':
       default:
         if (!isAdmin) {
@@ -359,7 +368,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header setView={handleSetView} />
+      <Header navigate={navigate} />
       <main className="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
@@ -428,29 +437,28 @@ const ArticleEditor: React.FC<{
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => setArticle(prev => prev ? { ...prev, title: e.target.value } : null);
     const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => setArticle(prev => prev ? { ...prev, content: e.target.value } : null);
     
-    const [sourcesMarkdown, setSourcesMarkdown] = useState('');
-
-    useEffect(() => {
-      const newMarkdown = article.sources ? article.sources.map(s => `[${s.title}](${s.uri})`).join('\n') : '';
-      setSourcesMarkdown(newMarkdown);
-    // This effect ensures the textarea is updated when the article being edited changes.
-    }, [article.id, article._tempId]);
+    const [sourcesMarkdown, setSourcesMarkdown] = useState(() => {
+      // This initializer function runs only once when the component mounts (or the key changes),
+      // correctly setting the initial state from the article prop without causing re-render issues.
+      // This solves both the input-reset bug and the new-article-sources-not-showing bug.
+      return article.sources ? article.sources.map(s => `[${s.title}](${s.uri})`).join('\n') : '';
+    });
 
     const handleSourcesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const text = e.target.value;
-        // 1. Update the local state for the textarea to ensure responsive input
+        // First, update the local state to immediately reflect user input in the textarea.
         setSourcesMarkdown(text);
 
-        // 2. Parse the text and update the parent component's article state
+        // Then, parse the text and update the parent component's state.
+        // This ensures the main article data is always up-to-date for publishing.
         const lines = text.split('\n').filter(line => line.trim() !== '');
         const newSources: Source[] = lines.map(line => {
-            // Match [title](url)
             const match = line.match(/\[(.*?)]\((.*?)\)/);
             if (match && match[1] && match[2]) {
                 return { title: match[1].trim(), uri: match[2].trim() };
             }
             return null;
-        }).filter((s): s is Source => s !== null); // Filter out nulls
+        }).filter((s): s is Source => s !== null);
         
         setArticle(prev => prev ? { ...prev, sources: newSources } : null);
     };
@@ -568,14 +576,14 @@ const ArticleList: React.FC<{
         <div className="space-y-6">
           {articles.map(article => (
             <div key={article.id} className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow group relative">
-              <div onClick={() => onSelectArticle(article)} className="cursor-pointer">
+              <a href={`/article/${article.id}`} onClick={(e) => { e.preventDefault(); onSelectArticle(article); }} className="cursor-pointer block">
                 <h3 className="text-2xl font-bold text-rose-600 group-hover:text-rose-700 transition-colors">{article.title}</h3>
                 <p className="mt-3 text-stone-600 line-clamp-2">{article.content}</p>
                 <div className="mt-4 flex items-center gap-3">
                   <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-semibold">{article.keyword}</span>
                   <span className="text-stone-400 text-xs">{new Date(article.createdAt).toLocaleDateString('ja-JP')}</span>
                 </div>
-              </div>
+              </a>
               {onDeleteArticle && (
                   <div className="absolute top-4 right-4">
                       <button onClick={(e) => { e.stopPropagation(); onDeleteArticle(article.id); }} className="p-2 text-stone-400 hover:text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/50 hover:bg-white" aria-label="記事を削除">
@@ -602,7 +610,6 @@ const ArticleDetail: React.FC<{
   const sanitizedHtml = DOMPurify.sanitize(marked(article.content) as string);
   
   useEffect(() => {
-    // Helper to find and update a meta tag's content, and return its original value.
     const setMetaContent = (selector: string, content: string): [Element | null, string | null] => {
       const element = document.querySelector(selector);
       const originalContent = element ? element.getAttribute('content') : null;
@@ -616,10 +623,8 @@ const ArticleDetail: React.FC<{
         const html = marked(markdown) as string;
         const match = html.match(/<img[^>]+src="([^">]+)"/);
         if (match && match[1]) {
-            // Ensure the URL is absolute
             return new URL(match[1], window.location.origin).href;
         }
-        // Fallback to the default site-wide image
         return new URL('/og-image.png', window.location.origin).href;
     };
 
@@ -631,7 +636,6 @@ const ArticleDetail: React.FC<{
     const pageUrl = window.location.href;
     const imageUrl = getFirstImageUrlFromMarkdown(article.content);
 
-    // Update meta tags for this specific article and store their original values.
     const originalValues: [Element | null, string | null][] = [
       setMetaContent('meta[name="description"]', description),
       setMetaContent('meta[property="og:title"]', pageTitle),
@@ -645,7 +649,6 @@ const ArticleDetail: React.FC<{
     ];
     
     return () => {
-      // Restore original meta tags when the component unmounts.
       document.title = originalTitle;
       originalValues.forEach(([element, originalContent]) => {
         if (element && originalContent !== null) {

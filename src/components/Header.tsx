@@ -1,15 +1,19 @@
 import React from 'react';
-import type { View } from '../types';
-import { WriteIcon, ListIcon } from './icons';
+import { WriteIcon, ListIcon, CherryBlossomIcon } from './icons';
 import { useAuth } from '../contexts/AuthContext';
 import { signInWithGoogle, signOutUser } from '../services/firebaseService';
 
 interface HeaderProps {
-  setView: (view: View) => void;
+  navigate: (path: string) => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ setView }) => {
+const Header: React.FC<HeaderProps> = ({ navigate }) => {
   const { user, isAdmin } = useAuth();
+
+  const handleNavigation = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
+    e.preventDefault();
+    navigate(path);
+  };
 
   const handleLogin = async () => {
     try {
@@ -24,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({ setView }) => {
     try {
       await signOutUser();
       // Go back to list view on logout
-      setView('list');
+      navigate('/');
     } catch (error) {
       console.error(error);
       alert('ログアウトに失敗しました。');
@@ -34,32 +38,34 @@ const Header: React.FC<HeaderProps> = ({ setView }) => {
   return (
     <header className="bg-white shadow-md">
       <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setView('list')}>
-          <img src="https://www.gstatic.com/images/branding/product/2x/gemini_48dp.png" alt="Gemini Logo" className="h-8 w-8" />
+        <a href="/" onClick={(e) => handleNavigation(e, '/')} className="flex items-center space-x-2 cursor-pointer">
+          <CherryBlossomIcon className="h-8 w-8" />
           <div>
             <h1 className="text-xl font-bold text-stone-800">
               かしこいママの暮らしノート
             </h1>
             <p className="text-xs text-rose-500">知って得する暮らしのヒント</p>
           </div>
-        </div>
+        </a>
         <nav className="flex items-center space-x-2 sm:space-x-4">
           {isAdmin && (
-            <button
-              onClick={() => setView('home')}
+            <a
+              href="/new"
+              onClick={(e) => handleNavigation(e, '/new')}
               className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-md transition-colors"
             >
               <WriteIcon className="h-5 w-5" />
               <span className="hidden sm:inline">新規作成</span>
-            </button>
+            </a>
           )}
-          <button
-            onClick={() => setView('list')}
+          <a
+            href="/"
+            onClick={(e) => handleNavigation(e, '/')}
             className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-md transition-colors"
           >
             <ListIcon className="h-5 w-5" />
             <span className="hidden sm:inline">記事一覧</span>
-          </button>
+          </a>
           {user ? (
             <div className="flex items-center space-x-2">
               <img 

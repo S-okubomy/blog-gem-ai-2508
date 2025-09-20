@@ -30,7 +30,7 @@ const Timestamp = firebase.firestore.Timestamp;
 
 // Data type for adding/updating articles in Firestore
 type ArticleData = Omit<Article, 'id' | 'createdAt'>;
-type ArticleUpdateData = Omit<Article, 'id' | 'createdAt' | 'content'> & { content?: string };
+type ArticleUpdateData = Partial<Omit<Article, 'id' | 'createdAt'>>;
 
 
 export const getArticlesCount = async (): Promise<number> => {
@@ -110,7 +110,7 @@ export const addArticle = async (data: Omit<ArticleData, 'createdAt'>): Promise<
   }
 };
 
-export const updateArticle = async (id: string, data: Partial<ArticleUpdateData>): Promise<void> => {
+export const updateArticle = async (id: string, data: ArticleUpdateData): Promise<void> => {
   try {
     const articleDoc = articlesCollectionRef.doc(id);
     await articleDoc.update(data);
@@ -147,5 +147,21 @@ export const signOutUser = async () => {
   } catch (error) {
     console.error("Error signing out: ", error);
     throw new Error("ログアウトに失敗しました。");
+  }
+};
+
+export const getAllArticlesForSitemap = async (): Promise<{ id: string, createdAt: string }[]> => {
+  try {
+    const snapshot = await articlesCollectionRef.orderBy('createdAt', 'desc').get();
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      const createdAt = data.createdAt instanceof Timestamp
+        ? data.createdAt.toDate().toISOString()
+        : new Date().toISOString();
+      return { id: doc.id, createdAt };
+    });
+  } catch (error) {
+    console.error("Error fetching all articles for sitemap: ", error);
+    throw new Error("全記事の取得に失敗しました。");
   }
 };
