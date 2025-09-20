@@ -1,3 +1,5 @@
+
+
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -9,15 +11,21 @@ import admin from 'firebase-admin';
 // This uses Application Default Credentials. For local development,
 // ensure you've authenticated via `gcloud auth application-default login`
 // or have the GOOGLE_APPLICATION_CREDENTIALS environment variable set.
-try {
-  if (!admin.apps.length) {
-    admin.initializeApp();
-  }
-} catch (error) {
-  console.error("Firebase Admin initialization failed:", error);
-  process.exit(1);
-}
-const db = admin.firestore();
+// try {
+//   if (!admin.apps.length) {
+//     const projectId = process.env.FIREBASE_PROJECT_ID;
+//     if (!projectId) {
+//       throw new Error("FIREBASE_PROJECT_ID is not set in the environment variables. Please check your .env file.");
+//     }
+//     admin.initializeApp({
+//       projectId: projectId,
+//     });
+//   }
+// } catch (error) {
+//   console.error("Firebase Admin initialization failed:", error);
+//   process.exit(1);
+// }
+// const db = admin.firestore();
 
 const app = express();
 const port = process.env.PORT || 8080;
@@ -33,57 +41,63 @@ let sitemapCache: string | null = null;
 let cacheTimestamp: number | null = null;
 const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour cache
 
-// Sitemap generation route
-app.get('/sitemap.xml', async (req, res) => {
-    const now = Date.now();
-    // Serve from cache if it's not expired
-    if (sitemapCache && cacheTimestamp && (now - cacheTimestamp < CACHE_DURATION_MS)) {
-        res.header('Content-Type', 'application/xml');
-        return res.send(sitemapCache);
-    }
+// // Sitemap generation route
+// app.get('/api/sitemap.xml', async (req, res) => {
+//     const now = Date.now();
+//     // Serve from cache if it's not expired
+//     if (sitemapCache && cacheTimestamp && (now - cacheTimestamp < CACHE_DURATION_MS)) {
+//         res.header('Content-Type', 'application/xml');
+//         return res.send(sitemapCache);
+//     }
 
-    try {
-        // Optimization: Select only the 'createdAt' field to reduce data transfer.
-        const articlesSnapshot = await db.collection('articles')
-            .orderBy('createdAt', 'desc')
-            .select('createdAt')
-            .get();
+//     try {
+//         // Step 1: Fetch all articles without ordering to prevent query failures
+//         // if some documents lack the `createdAt` field.
+//         const articlesSnapshot = await db.collection('articles').get();
+
+//         // Step 2: Sort the documents safely in the server's memory.
+//         const sortedDocs = articlesSnapshot.docs.sort((a, b) => {
+//             const dateA = a.data().createdAt?.toDate ? a.data().createdAt.toDate() : new Date(0);
+//             const dateB = b.data().createdAt?.toDate ? b.data().createdAt.toDate() : new Date(0);
+//             return dateB.getTime() - dateA.getTime();
+//         });
         
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
-        let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
-        xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
+//         const baseUrl = `${req.protocol}://${req.get('host')}`;
+//         let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
+//         xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
 
-        // Home page
-        xml += `<url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`;
+//         // Home page
+//         xml += `<url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`;
 
-        // Article pages
-        articlesSnapshot.docs.forEach(doc => {
-            const article = doc.data();
-            const articleUrl = `${baseUrl}/article/${doc.id}`;
-            if (article.createdAt && typeof article.createdAt.toDate === 'function') {
-                const lastMod = article.createdAt.toDate().toISOString().split('T')[0]; // Format as YYYY-MM-DD
-                xml += `<url>`;
-                xml += `<loc>${articleUrl}</loc>`;
-                xml += `<lastmod>${lastMod}</lastmod>`;
-                xml += `<changefreq>weekly</changefreq><priority>0.8</priority>`;
-                xml += `</url>`;
-            }
-        });
+//         // Article pages
+//         sortedDocs.forEach(doc => {
+//             const article = doc.data();
+//             const articleUrl = `${baseUrl}/article/${doc.id}`;
+//             // Check if createdAt exists and is a valid timestamp
+//             if (article.createdAt && typeof article.createdAt.toDate === 'function') {
+//                 const lastMod = article.createdAt.toDate().toISOString().split('T')[0]; // Format as YYYY-MM-DD
+//                 xml += `<url>`;
+//                 xml += `<loc>${articleUrl}</loc>`;
+//                 xml += `<lastmod>${lastMod}</lastmod>`;
+//                 xml += `<changefreq>weekly</changefreq><priority>0.8</priority>`;
+//                 xml += `</url>`;
+//             }
+//         });
 
-        xml += `</urlset>`;
+//         xml += `</urlset>`;
 
-        // Update cache
-        sitemapCache = xml;
-        cacheTimestamp = now;
+//         // Update cache
+//         sitemapCache = xml;
+//         cacheTimestamp = now;
 
-        res.header('Content-Type', 'application/xml');
-        res.send(xml);
+//         res.header('Content-Type', 'application/xml');
+//         res.send(xml);
 
-    } catch (error) {
-        console.error('Error generating sitemap:', error);
-        res.status(500).send('Error generating sitemap');
-    }
-});
+//     } catch (error) {
+//         console.error('Error generating sitemap:', error);
+//         res.status(500).send('Error generating sitemap');
+//     }
+// });
 
 
 // API route to generate blog post
