@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Article, View, Source } from './types';
 import { generateBlogPost } from './services/geminiService';
@@ -7,12 +5,36 @@ import { getArticles, getArticlesCount, addArticle, updateArticle, deleteArticle
 import Header from './components/Header';
 import Footer from './components/Footer';
 import ShareButtons from './components/ShareButtons';
-import { SparklesIcon, PublishIcon, RegenerateIcon, BackIcon, EditIcon, TrashIcon, HeartIcon, TagIcon, CalendarIcon, ExternalLinkIcon } from './components/icons';
+import { SparklesIcon, PublishIcon, RegenerateIcon, BackIcon, EditIcon, TrashIcon, HeartIcon, TagIcon, CalendarIcon, ExternalLinkIcon, CherryBlossomIcon } from './components/icons';
 import { useAuth } from './contexts/AuthContext';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import AffiliateAd from './components/AffiliateAd';
 import firebase from 'firebase/compat/app';
+
+/**
+ * Creates a clean, plain-text summary from a markdown string.
+ * @param markdown The markdown content.
+ * @param length The maximum length of the summary.
+ * @returns A truncated, plain-text summary.
+ */
+const createSummary = (markdown: string, length: number = 120): string => {
+  if (!markdown) return '';
+  // Convert markdown to HTML using marked
+  const html = marked(markdown) as string;
+  // Use the browser's built-in parser to create a document object
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  // Extract the text content, which strips all HTML tags
+  const plainText = doc.body.textContent || '';
+  // Clean up whitespace and normalize line breaks
+  const cleanedText = plainText.replace(/\s+/g, ' ').trim();
+  // Truncate the text if it's too long
+  if (cleanedText.length > length) {
+    return cleanedText.substring(0, length) + '...';
+  }
+  return cleanedText;
+};
+
 
 const App: React.FC = () => {
   const { isAdmin, loading: authLoading } = useAuth();
@@ -573,24 +595,33 @@ const ArticleList: React.FC<{
       </div>
     ) : (
       <>
-        <div className="space-y-6">
+        <div className="space-y-8">
           {articles.map(article => (
-            <div key={article.id} className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow group relative">
-              <a href={`/article/${article.id}`} onClick={(e) => { e.preventDefault(); onSelectArticle(article); }} className="cursor-pointer block">
-                <h3 className="text-2xl font-bold text-rose-600 group-hover:text-rose-700 transition-colors">{article.title}</h3>
-                <p className="mt-3 text-stone-600 line-clamp-2">{article.content}</p>
-                <div className="mt-4 flex items-center gap-3">
-                  <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-semibold">{article.keyword}</span>
-                  <span className="text-stone-400 text-xs">{new Date(article.createdAt).toLocaleDateString('ja-JP')}</span>
-                </div>
-              </a>
-              {onDeleteArticle && (
-                  <div className="absolute top-4 right-4">
-                      <button onClick={(e) => { e.stopPropagation(); onDeleteArticle(article.id); }} className="p-2 text-stone-400 hover:text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/50 hover:bg-white" aria-label="記事を削除">
-                          <TrashIcon className="h-5 w-5" />
-                      </button>
-                  </div>
-              )}
+            <div key={article.id} className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden group relative">
+                <a href={`/article/${article.id}`} onClick={(e) => { e.preventDefault(); onSelectArticle(article); }} className="cursor-pointer block md:flex">
+                    <div className="md:w-1/3 md:flex-shrink-0 overflow-hidden">
+                        {article.thumbnailUrl ? (
+                            <img src={article.thumbnailUrl} alt={article.title} className="h-48 w-full object-cover md:h-full transition-transform duration-300 group-hover:scale-105" />
+                        ) : (
+                            <img src="/og-image.png" alt="かしこいママの暮らしノート" className="h-48 w-full object-cover md:h-full" />
+                        )}
+                    </div>
+                    <div className="p-6 flex flex-col flex-grow">
+                        <h3 className="text-xl font-bold text-rose-600 group-hover:text-rose-700 transition-colors break-words">{article.title}</h3>
+                        <p className="mt-2 text-stone-600 line-clamp-3 flex-grow">{createSummary(article.content)}</p>
+                        <div className="mt-4 flex items-center gap-3">
+                            <span className="bg-rose-100 text-rose-700 px-3 py-1 rounded-full text-xs font-semibold">{article.keyword}</span>
+                            <span className="text-stone-400 text-xs">{new Date(article.createdAt).toLocaleDateString('ja-JP')}</span>
+                        </div>
+                    </div>
+                </a>
+                {onDeleteArticle && (
+                    <div className="absolute top-4 right-4">
+                        <button onClick={(e) => { e.stopPropagation(); onDeleteArticle(article.id); }} className="p-2 text-stone-400 hover:text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity bg-white/50 hover:bg-white" aria-label="記事を削除">
+                            <TrashIcon className="h-5 w-5" />
+                        </button>
+                    </div>
+                )}
             </div>
           ))}
         </div>

@@ -5,6 +5,7 @@ import type { Article } from '../types';
 import { firebaseConfig } from '../config';
 // Modular SDK imports for features not in compat
 import { getFirestore, collection, getCountFromServer } from 'firebase/firestore';
+import { marked } from 'marked';
 
 
 // 環境変数が設定されているか確認します
@@ -32,6 +33,22 @@ const Timestamp = firebase.firestore.Timestamp;
 type ArticleData = Omit<Article, 'id' | 'createdAt'>;
 type ArticleUpdateData = Partial<Omit<Article, 'id' | 'createdAt'>>;
 
+/**
+ * Extracts the URL of the first image from a markdown string.
+ * @param markdown The markdown content of the article.
+ * @returns The URL of the first image, or null if no image is found.
+ */
+const extractFirstImageUrl = (markdown: string): string | null => {
+  if (!markdown) return null;
+  // Use a non-greedy regex to find the first markdown image: ![alt](src)
+  const match = markdown.match(/!\[.*?\]\((.*?)\)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  // Fallback for HTML img tags if markdown contains raw HTML
+  const htmlMatch = markdown.match(/<img[^>]+src="([^">]+)"/);
+  return htmlMatch ? htmlMatch[1] : null;
+};
 
 export const getArticlesCount = async (): Promise<number> => {
   try {
@@ -65,7 +82,8 @@ export const getArticles = async (
       const createdAt = data.createdAt instanceof Timestamp
         ? data.createdAt.toDate().toISOString()
         : new Date().toISOString();
-      return { ...data, id: doc.id, createdAt } as Article;
+      const thumbnailUrl = extractFirstImageUrl(data.content || '');
+      return { ...data, id: doc.id, createdAt, thumbnailUrl } as Article;
     });
 
     return { articles, docs };
@@ -85,7 +103,8 @@ export const getArticleById = async (id: string): Promise<Article | null> => {
       const createdAt = data.createdAt instanceof Timestamp
         ? data.createdAt.toDate().toISOString()
         : new Date().toISOString();
-      return { ...data, id: docSnap.id, createdAt } as Article;
+      const thumbnailUrl = extractFirstImageUrl(data.content || '');
+      return { ...data, id: docSnap.id, createdAt, thumbnailUrl } as Article;
     } else {
       console.warn(`Article with id ${id} not found.`);
       return null;

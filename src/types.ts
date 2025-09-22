@@ -10,6 +10,7 @@ export interface Article {
   keyword: string;
   createdAt: string;
   sources?: Source[];
+  thumbnailUrl?: string;
   _tempId?: string;
 }
 
