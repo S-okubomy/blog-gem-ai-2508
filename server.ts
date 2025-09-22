@@ -1,114 +1,161 @@
-
-
+// FIX: To prevent type conflicts with DOM libraries, import express as a whole module
+// and use `express.Request` and `express.Response` for type annotations.
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import { GoogleGenAI } from '@google/genai';
 import 'dotenv/config';
 import admin from 'firebase-admin';
 
-// Initialize Firebase Admin SDK
-// This uses Application Default Credentials. For local development,
-// ensure you've authenticated via `gcloud auth application-default login`
-// or have the GOOGLE_APPLICATION_CREDENTIALS environment variable set.
-// try {
-//   if (!admin.apps.length) {
-//     const projectId = process.env.FIREBASE_PROJECT_ID;
-//     if (!projectId) {
-//       throw new Error("FIREBASE_PROJECT_ID is not set in the environment variables. Please check your .env file.");
-//     }
-//     admin.initializeApp({
-//       projectId: projectId,
-//     });
-//   }
-// } catch (error) {
-//   console.error("Firebase Admin initialization failed:", error);
-//   process.exit(1);
-// }
-// const db = admin.firestore();
+// ESM-friendly __dirname and project root calculation
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = __dirname.endsWith('dist-server')
+  ? path.join(__dirname, '..') // In production, go up from dist-server
+  : __dirname; // In development, __dirname is the project root
+
+// --- Firebase Admin SDK Initialization ---
+try {
+  if (!admin.apps.length) {
+    const { 
+      FIREBASE_PROJECT_ID, 
+      FIREBASE_PRIVATE_KEY, 
+      FIREBASE_CLIENT_EMAIL 
+    } = process.env;
+
+    if (FIREBASE_PRIVATE_KEY && FIREBASE_CLIENT_EMAIL && FIREBASE_PROJECT_ID) {
+      // Primary method: Use environment variables.
+      // This is secure and ideal for environments like Cloud Run or local .env files.
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: FIREBASE_PROJECT_ID,
+          // Important: Replace escaped newlines in the private key.
+          privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+          clientEmail: FIREBASE_CLIENT_EMAIL,
+        }),
+      });
+      console.log('✅ Firebase Admin SDK initialized successfully using environment variables.');
+    } else {
+      // Fallback method: Use Application Default Credentials.
+      // This is useful for local development when gcloud CLI is configured.
+      admin.initializeApp();
+      console.log('✅ Firebase Admin SDK initialized using Application Default Credentials.');
+      console.warn('⚠️  For production, setting FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, and FIREBASE_CLIENT_EMAIL environment variables is the recommended and most reliable method.');
+    }
+  }
+} catch (error: any) {
+  console.error("🔴 FATAL: Firebase Admin initialization failed.");
+  console.error("This means the server cannot connect to the database.");
+  
+  if (error.message.includes('Could not load the default credentials')) {
+    console.error("\n--- HOW TO FIX ---");
+    console.error("1. RECOMMENDED: Set environment variables in your '.env' file or your hosting environment:");
+    console.error("   - FIREBASE_PROJECT_ID");
+    console.error("   - FIREBASE_CLIENT_EMAIL");
+    console.error("   - FIREBASE_PRIVATE_KEY");
+    console.error("   (Copy these values from the service account JSON file you can download from Firebase Console)");
+    console.error("\n2. FOR LOCAL DEVELOPMENT ONLY: Run this command in your terminal:");
+    console.error("   - gcloud auth application-default login");
+    console.error("------------------\n");
+  } else {
+    console.error("An unexpected error occurred during initialization:", error);
+  }
+  
+  // Exit the process because the server is non-functional without a database connection.
+  process.exit(1);
+}
 
 const app = express();
 const port = process.env.PORT || 8080;
 
-// ESM-friendly __dirname
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+app.use(express.json());
 
-(app.use as any)(express.json());
+// --- Dynamic robots.txt Generation ---
+app.get('/robots.txt', (req: express.Request, res: express.Response) => {
+  const baseUrl = process.env.SITE_BASE_URL?.trim();
+  if (!baseUrl) {
+      console.error('🔴 ERROR: SITE_BASE_URL is not set for robots.txt generation.');
+      return res.status(500).send('Server configuration error: SITE_BASE_URL is not set.');
+  }
+  // Construct the absolute URL for the sitemap
+  const sitemapUrl = new URL('/sitemap.xml', baseUrl).href;
+  const robotsTxtContent = `User-agent: *\nAllow: /\nSitemap: ${sitemapUrl}\n`;
+  res.header('Content-Type', 'text/plain');
+  res.send(robotsTxtContent);
+});
 
-// Sitemap cache variables
-let sitemapCache: string | null = null;
-let cacheTimestamp: number | null = null;
-const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour cache
+// --- Sitemap Generation with Cache ---
+// Cache sitemap for 1 hour to reduce DB reads
+const sitemapCache = {
+  xml: '',
+  timestamp: 0,
+};
+const SITEMAP_CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
 
-// // Sitemap generation route
-// app.get('/api/sitemap.xml', async (req, res) => {
-//     const now = Date.now();
-//     // Serve from cache if it's not expired
-//     if (sitemapCache && cacheTimestamp && (now - cacheTimestamp < CACHE_DURATION_MS)) {
-//         res.header('Content-Type', 'application/xml');
-//         return res.send(sitemapCache);
-//     }
+// FIX: Correctly type req and res using the imported Request and Response types.
+app.get('/sitemap.xml', async (req: express.Request, res: express.Response) => {
+  const now = Date.now();
+  if (sitemapCache.xml && (now - sitemapCache.timestamp < SITEMAP_CACHE_DURATION)) {
+    res.header('Content-Type', 'application/xml');
+    return res.send(sitemapCache.xml);
+  }
 
-//     try {
-//         // Step 1: Fetch all articles without ordering to prevent query failures
-//         // if some documents lack the `createdAt` field.
-//         const articlesSnapshot = await db.collection('articles').get();
+  const baseUrl = process.env.SITE_BASE_URL;
+  if (!baseUrl) {
+    console.error('🔴 ERROR: SITE_BASE_URL is not set in your .env file.');
+    return res.status(500).send('Server configuration error: SITE_BASE_URL is not set.');
+  }
 
-//         // Step 2: Sort the documents safely in the server's memory.
-//         const sortedDocs = articlesSnapshot.docs.sort((a, b) => {
-//             const dateA = a.data().createdAt?.toDate ? a.data().createdAt.toDate() : new Date(0);
-//             const dateB = b.data().createdAt?.toDate ? b.data().createdAt.toDate() : new Date(0);
-//             return dateB.getTime() - dateA.getTime();
-//         });
-        
-//         const baseUrl = `${req.protocol}://${req.get('host')}`;
-//         let xml = `<?xml version="1.0" encoding="UTF-8"?>`;
-//         xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">`;
+  try {
+    const db = admin.firestore();
+    const articlesSnapshot = await db.collection('articles').get();
+    
+    // Sort documents by createdAt date in descending order on the server side
+    // to avoid issues with missing fields in Firestore queries.
+    const sortedDocs = articlesSnapshot.docs.sort((a, b) => {
+        const dateA = a.data().createdAt?.toDate ? a.data().createdAt.toDate() : new Date(0);
+        const dateB = b.data().createdAt?.toDate ? b.data().createdAt.toDate() : new Date(0);
+        return dateB.getTime() - dateA.getTime();
+    });
 
-//         // Home page
-//         xml += `<url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`;
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+    xml += `  <url>\n    <loc>${baseUrl}/</loc>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>\n`;
 
-//         // Article pages
-//         sortedDocs.forEach(doc => {
-//             const article = doc.data();
-//             const articleUrl = `${baseUrl}/article/${doc.id}`;
-//             // Check if createdAt exists and is a valid timestamp
-//             if (article.createdAt && typeof article.createdAt.toDate === 'function') {
-//                 const lastMod = article.createdAt.toDate().toISOString().split('T')[0]; // Format as YYYY-MM-DD
-//                 xml += `<url>`;
-//                 xml += `<loc>${articleUrl}</loc>`;
-//                 xml += `<lastmod>${lastMod}</lastmod>`;
-//                 xml += `<changefreq>weekly</changefreq><priority>0.8</priority>`;
-//                 xml += `</url>`;
-//             }
-//         });
+    sortedDocs.forEach(doc => {
+      const article = doc.data();
+      const articleUrl = `${baseUrl}/article/${doc.id}`;
+      // Ensure createdAt field exists and is a valid timestamp
+      if (article.createdAt && typeof article.createdAt.toDate === 'function') {
+        const lastMod = article.createdAt.toDate().toISOString().split('T')[0];
+        xml += `  <url>\n    <loc>${articleUrl}</loc>\n    <lastmod>${lastMod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
+      }
+    });
 
-//         xml += `</urlset>`;
+    xml += `</urlset>`;
+    
+    sitemapCache.xml = xml;
+    sitemapCache.timestamp = now;
 
-//         // Update cache
-//         sitemapCache = xml;
-//         cacheTimestamp = now;
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+  } catch (error) {
+    console.error('Error generating sitemap:', error);
+    res.status(500).send('Error generating sitemap');
+  }
+});
 
-//         res.header('Content-Type', 'application/xml');
-//         res.send(xml);
-
-//     } catch (error) {
-//         console.error('Error generating sitemap:', error);
-//         res.status(500).send('Error generating sitemap');
-//     }
-// });
-
-
-// API route to generate blog post
-app.post('/api/generate', async (req: any, res: any) => {
+// FIX: Explicitly use `express.Request` and `express.Response` to ensure the correct types from
+// the Express library are used, which contain properties like `body`, `status`, and `json`.
+// FIX: Correctly type req and res using the imported Request and Response types.
+app.post('/api/generate', async (req: express.Request, res: express.Response) => {
   const { keyword } = req.body;
 
   if (!keyword || typeof keyword !== 'string') {
     return res.status(400).json({ error: 'キーワードは必須です。' });
   }
 
-  // API_KEY must be set as an environment variable on the server
   const API_KEY = process.env.API_KEY;
   if (!API_KEY) {
     console.error('API_KEY environment variable not set.');
@@ -141,13 +188,13 @@ app.post('/api/generate', async (req: any, res: any) => {
     let title = `「${keyword}」について`; // Default title
     let content = responseText;
     
-    const titleIndex = lines.findIndex(line => line.startsWith('# '));
-    if (titleIndex !== -1) {
-      title = lines[titleIndex].substring(2).trim();
-      content = lines.slice(titleIndex + 1).join('\n').trim();
-    }
+      const titleIndex = lines.findIndex(line => line.startsWith('# '));
+      if (titleIndex !== -1) {
+        title = lines[titleIndex].substring(2).trim();
+        content = lines.slice(titleIndex + 1).join('\n').trim();
+      }
     // --- ---
-
+    
     // --- Extract grounding sources ---
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sources = groundingChunks.map((chunk: any) => ({
@@ -165,15 +212,20 @@ app.post('/api/generate', async (req: any, res: any) => {
   }
 });
 
-// Serve static files from the React app
-(app.use as any)(express.static(path.join(__dirname, '../dist')));
+// --- Static File Serving ---
+const staticDir = path.join(projectRoot, 'dist');
+const indexPath = path.join(staticDir, 'index.html');
 
-// The "catchall" handler: for any request that doesn't
-// match one above, send back React's index.html file.
-(app.get as any)('*', (req: any, res: any) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
+app.use(express.static(staticDir));
+
+app.get('*', (req: express.Request, res: express.Response) => {
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('The application has not been built yet. Please run "npm run build".');
+  }
 });
 
 app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+  console.log(`Server listening on port http://localhost:${port}`);
 });
