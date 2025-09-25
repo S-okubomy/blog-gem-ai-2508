@@ -56,30 +56,6 @@ const App: React.FC = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [pageStartCursors, setPageStartCursors] = useState<Map<number, firebase.firestore.QueryDocumentSnapshot | null>>(new Map([[1, null]]));
 
-  // Handle redirect from old hash-based URLs on initial load
-  useEffect(() => {
-    const hash = window.location.hash;
-    let newPath: string | null = null;
-
-    if (hash.startsWith('#/article/')) {
-      const articleId = hash.substring('#/article/'.length);
-      newPath = `/article/${articleId}`;
-    } else if (hash.startsWith('#/edit/')) {
-      const articleId = hash.substring('#/edit/'.length);
-      newPath = `/edit/${articleId}`;
-    } else if (hash === '#/new') {
-      newPath = '/new';
-    }
-
-    if (newPath) {
-      // Use replaceState to avoid adding the old URL to the browser's history.
-      // This makes the URL change seamless for the user.
-      window.history.replaceState(null, '', newPath);
-      setPath(newPath); // Update the internal state to trigger routing.
-    }
-  }, []); // Empty dependency array ensures this runs only once on initial render.
-
-
   const navigate = useCallback((newPath: string) => {
     if (window.location.pathname !== newPath) {
       window.history.pushState({}, '', newPath);
@@ -239,6 +215,45 @@ const App: React.FC = () => {
       setMetaContent('meta[property="twitter:image"]', defaultImageUrl);
     }
   }, [view]);
+  
+  // Effect to manage the canonical link tag for SEO
+  useEffect(() => {
+    const CANONICAL_TAG_ID = 'canonical-link-tag';
+
+    // Clean up any existing canonical tag on change
+    const existingLink = document.getElementById(CANONICAL_TAG_ID);
+    if (existingLink) {
+      existingLink.remove();
+    }
+
+    // Only add canonical tags for public, indexable pages
+    if (view !== 'list' && view !== 'home' && view !== 'article') {
+      return;
+    }
+
+    const link = document.createElement('link');
+    link.rel = 'canonical';
+    link.id = CANONICAL_TAG_ID;
+    
+    const baseUrl = window.location.origin;
+
+    if (view === 'article' && currentArticle) {
+      link.href = `${baseUrl}/article/${currentArticle.id}`;
+    } else { // For 'list' or 'home' view
+      link.href = baseUrl + '/';
+    }
+
+    document.head.appendChild(link);
+    
+    // Cleanup function to remove the tag when the component unmounts or view changes
+    return () => {
+      const linkToRemove = document.getElementById(CANONICAL_TAG_ID);
+      if (linkToRemove) {
+        linkToRemove.remove();
+      }
+    };
+  }, [view, currentArticle]);
+
 
   useEffect(() => {
     if (error) {
