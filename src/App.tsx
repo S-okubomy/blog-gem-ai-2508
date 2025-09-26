@@ -10,7 +10,6 @@ import { useAuth } from './contexts/AuthContext';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import AffiliateAd from './components/AffiliateAd';
-import firebase from 'firebase/compat/app';
 
 /**
  * Creates a clean, plain-text summary from a markdown string.
@@ -54,7 +53,8 @@ const App: React.FC = () => {
   const articlesPerPage = 20;
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
-  const [pageStartCursors, setPageStartCursors] = useState<Map<number, firebase.firestore.QueryDocumentSnapshot | null>>(new Map([[1, null]]));
+  const [pageStartCursors, setPageStartCursors] = useState<Map<number, string | null>>(new Map([[1, null]]));
+
 
   const navigate = useCallback((newPath: string) => {
     if (window.location.pathname !== newPath) {
@@ -101,13 +101,12 @@ const App: React.FC = () => {
         setError(null);
         try {
             const cursor = pageStartCursors.get(currentPage)!;
-            const { articles: fetchedArticles, docs } = await getArticles(articlesPerPage, cursor);
+            const { articles: fetchedArticles, lastDocId } = await getArticles(articlesPerPage, cursor);
             setArticles(fetchedArticles);
 
-            if (docs.length > 0) {
-                const nextCursor = docs[docs.length - 1];
+            if (lastDocId) {
                 if (!pageStartCursors.has(currentPage + 1)) {
-                    setPageStartCursors(prevMap => new Map(prevMap.set(currentPage + 1, nextCursor)));
+                    setPageStartCursors(prevMap => new Map(prevMap.set(currentPage + 1, lastDocId)));
                 }
             }
         } catch (err) {

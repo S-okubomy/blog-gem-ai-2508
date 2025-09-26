@@ -3,8 +3,6 @@ import 'firebase/compat/firestore';
 import 'firebase/compat/auth';
 import type { Article } from '../types';
 import { firebaseConfig } from '../config';
-// Modular SDK imports for features not in compat
-import { getFirestore, collection, getCountFromServer } from 'firebase/firestore';
 import { marked } from 'marked';
 
 
@@ -20,11 +18,10 @@ if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
   throw new Error(errorMessage);
 }
 
-// Initialize Firebase
-const app = firebase.initializeApp(firebaseConfig);
+// Initialize Firebase for client-side auth
+firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 export const auth = firebase.auth();
-const modularDb = getFirestore(app); // Get modular instance from compat app
 
 const articlesCollectionRef = db.collection('articles');
 const Timestamp = firebase.firestore.Timestamp;
@@ -50,11 +47,20 @@ const extractFirstImageUrl = (markdown: string): string | null => {
   return htmlMatch ? htmlMatch[1] : null;
 };
 
+// Helper function to handle API fetch responses
+const handleApiResponse = async (response: Response) => {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'サーバーから不明なエラーが返されました。' }));
+    throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+  }
+  return response.json();
+};
+
 export const getArticlesCount = async (): Promise<number> => {
   try {
-    const modularArticlesCollection = collection(modularDb, 'articles');
-    const snapshot = await getCountFromServer(modularArticlesCollection);
-    return snapshot.data().count;
+    const response = await fetch('/api/articles-count');
+    const data = await handleApiResponse(response);
+    return data.count;
   } catch (error) {
     console.error("Error getting articles count: ", error);
     throw new Error("記事の総数の取得に失敗しました。");
@@ -64,51 +70,39 @@ export const getArticlesCount = async (): Promise<number> => {
 
 export const getArticles = async (
   pageSize: number,
-  startAfterDoc: firebase.firestore.QueryDocumentSnapshot | null
-): Promise<{ articles: Article[], docs: firebase.firestore.QueryDocumentSnapshot[] }> => {
+  startAfterDocId: string | null
+): Promise<{ articles: Article[], lastDocId: string | null }> => {
   try {
-    let query = articlesCollectionRef
-      .orderBy('createdAt', 'desc')
-      .orderBy(firebase.firestore.FieldPath.documentId(), 'desc');
-
-    if (startAfterDoc) {
-      query = query.startAfter(startAfterDoc);
+    const params = new URLSearchParams({ pageSize: String(pageSize) });
+    if (startAfterDocId) {
+      params.append('startAfter', startAfterDocId);
     }
+    const response = await fetch(`/api/articles?${params.toString()}`);
+    const data = await handleApiResponse(response);
     
-    const snapshot = await query.limit(pageSize).get();
-    const docs = snapshot.docs;
-    const articles = docs.map(doc => {
-      const data = doc.data();
-      const createdAt = data.createdAt instanceof Timestamp
-        ? data.createdAt.toDate().toISOString()
-        : new Date().toISOString();
-      const thumbnailUrl = extractFirstImageUrl(data.content || '');
-      return { ...data, id: doc.id, createdAt, thumbnailUrl } as Article;
-    });
-
-    return { articles, docs };
+    const articlesWithThumbnails = data.articles.map((article: Article) => ({
+      ...article,
+      thumbnailUrl: extractFirstImageUrl(article.content || '')
+    }));
+    
+    return { articles: articlesWithThumbnails, lastDocId: data.lastDocId };
   } catch (error) {
     console.error("Error fetching articles: ", error);
-    throw new Error("記事の読み込みに失敗しました。Firebaseのセキュリティルールが正しく設定されているか確認してください。");
+    throw new Error("記事の読み込みに失敗しました。サーバーが正しく動作しているか確認してください。");
   }
 };
 
 
 export const getArticleById = async (id: string): Promise<Article | null> => {
   try {
-    const docRef = articlesCollectionRef.doc(id);
-    const docSnap = await docRef.get();
-    if (docSnap.exists) {
-      const data = docSnap.data()!;
-      const createdAt = data.createdAt instanceof Timestamp
-        ? data.createdAt.toDate().toISOString()
-        : new Date().toISOString();
-      const thumbnailUrl = extractFirstImageUrl(data.content || '');
-      return { ...data, id: docSnap.id, createdAt, thumbnailUrl } as Article;
-    } else {
-      console.warn(`Article with id ${id} not found.`);
-      return null;
+    const response = await fetch(`/api/articles/${id}`);
+    if (response.status === 404) {
+        console.warn(`Article with id ${id} not found.`);
+        return null;
     }
+    const data = await handleApiResponse(response);
+    data.thumbnailUrl = extractFirstImageUrl(data.content || '');
+    return data as Article;
   } catch (error) {
     console.error(`Error fetching article by ID ${id}:`, error);
     throw new Error("指定された記事の読み込みに失敗しました。");

@@ -1,6 +1,7 @@
-// FIX: To prevent type conflicts with DOM libraries, import express as a whole module
-// and use `express.Request` and `express.Response` for type annotations.
-import express from 'express';
+// Use express.Request and express.Response to prevent type conflicts with DOM libraries.
+// Fix: Explicitly import Request and Response to avoid conflicts with DOM types.
+// Fix: Use aliased imports for Request and Response to avoid conflicts with DOM types.
+import express, { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -68,11 +69,13 @@ try {
 
 const app = express();
 const port = process.env.PORT || 8080;
+const db = admin.firestore();
 
 app.use(express.json());
 
 // --- Dynamic robots.txt Generation ---
-app.get('/robots.txt', (req: express.Request, res: express.Response) => {
+// FIX: Use Request and Response from express to prevent type conflicts.
+app.get('/robots.txt', (req: ExpressRequest, res: ExpressResponse) => {
   const baseUrl = process.env.SITE_BASE_URL?.trim();
   if (!baseUrl) {
       console.error('🔴 ERROR: SITE_BASE_URL is not set for robots.txt generation.');
@@ -93,8 +96,8 @@ const sitemapCache = {
 };
 const SITEMAP_CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
 
-// FIX: Correctly type req and res using the imported Request and Response types.
-app.get('/sitemap.xml', async (req: express.Request, res: express.Response) => {
+// FIX: Use Request and Response from express to prevent type conflicts.
+app.get('/sitemap.xml', async (req: ExpressRequest, res: ExpressResponse) => {
   const now = Date.now();
   if (sitemapCache.xml && (now - sitemapCache.timestamp < SITEMAP_CACHE_DURATION)) {
     res.header('Content-Type', 'application/xml');
@@ -108,7 +111,6 @@ app.get('/sitemap.xml', async (req: express.Request, res: express.Response) => {
   }
 
   try {
-    const db = admin.firestore();
     const articlesSnapshot = await db.collection('articles').get();
     
     // Sort documents by createdAt date in descending order on the server side
@@ -146,10 +148,75 @@ app.get('/sitemap.xml', async (req: express.Request, res: express.Response) => {
   }
 });
 
-// FIX: Explicitly use `express.Request` and `express.Response` to ensure the correct types from
-// the Express library are used, which contain properties like `body`, `status`, and `json`.
-// FIX: Correctly type req and res using the imported Request and Response types.
-app.post('/api/generate', async (req: express.Request, res: express.Response) => {
+// --- NEW: API endpoints for fetching articles ---
+
+// Endpoint to get total article count
+app.get('/api/articles-count', async (req: ExpressRequest, res: ExpressResponse) => {
+  try {
+    const snapshot = await db.collection('articles').count().get();
+    res.json({ count: snapshot.data().count });
+  } catch (error) {
+    console.error('Error getting articles count:', error);
+    res.status(500).json({ error: '記事の総数の取得に失敗しました。' });
+  }
+});
+
+// Endpoint to get a paginated list of articles
+app.get('/api/articles', async (req: ExpressRequest, res: ExpressResponse) => {
+  try {
+    const { pageSize = '10', startAfter } = req.query;
+    const limit = parseInt(pageSize as string, 10);
+    
+    let query = db.collection('articles').orderBy('createdAt', 'desc');
+
+    if (startAfter && typeof startAfter === 'string') {
+      const startAfterDoc = await db.collection('articles').doc(startAfter).get();
+      if (startAfterDoc.exists) {
+        query = query.startAfter(startAfterDoc);
+      }
+    }
+    
+    const snapshot = await query.limit(limit).get();
+    const articles = snapshot.docs.map(doc => {
+      const data = doc.data();
+      const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : new Date().toISOString();
+      return { ...data, id: doc.id, createdAt };
+    });
+    
+    // Get the ID of the last document for the next page cursor
+    const lastDocId = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1].id : null;
+
+    res.json({ articles, lastDocId });
+  } catch (error) {
+    console.error('Error fetching articles:', error);
+    res.status(500).json({ error: '記事の取得に失敗しました。' });
+  }
+});
+
+// Endpoint to get a single article by ID
+app.get('/api/articles/:id', async (req: ExpressRequest, res: ExpressResponse) => {
+  try {
+    const { id } = req.params;
+    const docRef = db.collection('articles').doc(id);
+    const docSnap = await docRef.get();
+
+    if (docSnap.exists) {
+      const data = docSnap.data()!;
+      const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : new Date().toISOString();
+      res.json({ ...data, id: docSnap.id, createdAt });
+    } else {
+      res.status(404).json({ error: '記事が見つかりませんでした。' });
+    }
+  } catch (error) {
+    console.error('Error fetching article by ID:', error);
+    res.status(500).json({ error: '記事の取得に失敗しました。' });
+  }
+});
+
+
+// --- Gemini API Endpoint ---
+// FIX: Use Request and Response from express to prevent type conflicts.
+app.post('/api/generate', async (req: ExpressRequest, res: ExpressResponse) => {
   const { keyword } = req.body;
 
   if (!keyword || typeof keyword !== 'string') {
@@ -218,7 +285,8 @@ const indexPath = path.join(staticDir, 'index.html');
 
 app.use(express.static(staticDir));
 
-app.get('*', (req: express.Request, res: express.Response) => {
+// FIX: Use Request and Response from express to prevent type conflicts.
+app.get('*', (req: ExpressRequest, res: ExpressResponse) => {
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
