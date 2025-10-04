@@ -1,7 +1,6 @@
-// Use express.Request and express.Response to prevent type conflicts with DOM libraries.
-// Fix: Explicitly import Request and Response to avoid conflicts with DOM types.
-// Fix: Use aliased imports for Request and Response to avoid conflicts with DOM types.
-import express, { Request as ExpressRequest, Response as ExpressResponse } from 'express';
+// FIX: Use fully qualified express.Request and express.Response types to prevent
+// conflicts with DOM library types for Request and Response.
+import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -74,8 +73,7 @@ const db = admin.firestore();
 app.use(express.json());
 
 // --- Dynamic robots.txt Generation ---
-// FIX: Use Request and Response from express to prevent type conflicts.
-app.get('/robots.txt', (req: ExpressRequest, res: ExpressResponse) => {
+app.get('/robots.txt', (req: express.Request, res: express.Response) => {
   const baseUrl = process.env.SITE_BASE_URL?.trim();
   if (!baseUrl) {
       console.error('🔴 ERROR: SITE_BASE_URL is not set for robots.txt generation.');
@@ -96,8 +94,7 @@ const sitemapCache = {
 };
 const SITEMAP_CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
 
-// FIX: Use Request and Response from express to prevent type conflicts.
-app.get('/sitemap.xml', async (req: ExpressRequest, res: ExpressResponse) => {
+app.get('/sitemap.xml', async (req: express.Request, res: express.Response) => {
   const now = Date.now();
   if (sitemapCache.xml && (now - sitemapCache.timestamp < SITEMAP_CACHE_DURATION)) {
     res.header('Content-Type', 'application/xml');
@@ -151,7 +148,7 @@ app.get('/sitemap.xml', async (req: ExpressRequest, res: ExpressResponse) => {
 // --- NEW: API endpoints for fetching articles ---
 
 // Endpoint to get total article count
-app.get('/api/articles-count', async (req: ExpressRequest, res: ExpressResponse) => {
+app.get('/api/articles-count', async (req: express.Request, res: express.Response) => {
   try {
     const snapshot = await db.collection('articles').count().get();
     res.json({ count: snapshot.data().count });
@@ -162,7 +159,7 @@ app.get('/api/articles-count', async (req: ExpressRequest, res: ExpressResponse)
 });
 
 // Endpoint to get a paginated list of articles
-app.get('/api/articles', async (req: ExpressRequest, res: ExpressResponse) => {
+app.get('/api/articles', async (req: express.Request, res: express.Response) => {
   try {
     const { pageSize = '10', startAfter } = req.query;
     const limit = parseInt(pageSize as string, 10);
@@ -194,7 +191,7 @@ app.get('/api/articles', async (req: ExpressRequest, res: ExpressResponse) => {
 });
 
 // Endpoint to get a single article by ID
-app.get('/api/articles/:id', async (req: ExpressRequest, res: ExpressResponse) => {
+app.get('/api/articles/:id', async (req: express.Request, res: express.Response) => {
   try {
     const { id } = req.params;
     const docRef = db.collection('articles').doc(id);
@@ -215,8 +212,7 @@ app.get('/api/articles/:id', async (req: ExpressRequest, res: ExpressResponse) =
 
 
 // --- Gemini API Endpoint ---
-// FIX: Use Request and Response from express to prevent type conflicts.
-app.post('/api/generate', async (req: ExpressRequest, res: ExpressResponse) => {
+app.post('/api/generate', async (req: express.Request, res: express.Response) => {
   const { keyword } = req.body;
 
   if (!keyword || typeof keyword !== 'string') {
@@ -279,20 +275,107 @@ app.post('/api/generate', async (req: ExpressRequest, res: ExpressResponse) => {
   }
 });
 
-// --- Static File Serving ---
+
+// --- SSR Helpers ---
+const createSummaryForSsr = (markdown: string, length: number = 120): string => {
+  if (!markdown) return '';
+  // This is a simplified, server-safe version of the client-side createSummary function.
+  // It removes markdown images, headings, and other block-level elements.
+  const plainText = markdown
+    .replace(/!\[.*?\]\(.*?\)/g, '') // Remove markdown images
+    .replace(/<[^>]+>/g, '') // Remove any HTML tags
+    .replace(/[#*`>|~-]/g, '') // Remove markdown characters
+    .replace(/\s+/g, ' ') // Normalize whitespace
+    .trim();
+  
+  if (plainText.length > length) {
+    return plainText.substring(0, length) + '...';
+  }
+  return plainText;
+};
+
+const extractFirstImageUrlForSsr = (markdown: string): string | null => {
+  if (!markdown) return null;
+  const match = markdown.match(/!\[.*?\]\((.*?)\)/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  const htmlMatch = markdown.match(/<img[^>]+src="([^">]+)"/);
+  return htmlMatch ? htmlMatch[1] : null;
+};
+
+
+// --- Static File Serving & SSR for OGP ---
 const staticDir = path.join(projectRoot, 'dist');
 const indexPath = path.join(staticDir, 'index.html');
 
+// Serve static assets from the 'dist' directory
 app.use(express.static(staticDir));
 
-// FIX: Use Request and Response from express to prevent type conflicts.
-app.get('*', (req: ExpressRequest, res: ExpressResponse) => {
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).send('The application has not been built yet. Please run "npm run build".');
+// This catch-all route handles all page loads, including direct navigation to article pages.
+app.get('*', async (req: express.Request, res: express.Response) => {
+  try {
+    const htmlTemplate = await fs.promises.readFile(indexPath, 'utf-8');
+
+    const baseUrl = process.env.SITE_BASE_URL?.trim() || '';
+    const defaultTitle = 'かしこいママの暮らしノート';
+    const defaultDescription = '知って得する暮らしのヒントや、育児の裏ワザなど、ママの毎日を応援する情報が満載のブログです。';
+    const defaultImageUrl = new URL('/og-image.png', baseUrl).href;
+
+    let finalHtml = htmlTemplate;
+    const articleMatch = req.path.match(/^\/article\/([a-zA-Z0-9]+)$/);
+
+    if (articleMatch) {
+      // It's an article page, fetch data for OGP tags
+      const articleId = articleMatch[1];
+      const docSnap = await db.collection('articles').doc(articleId).get();
+
+      if (docSnap.exists) {
+        const article = docSnap.data()!;
+        const pageTitle = `${article.title} | ${defaultTitle}`;
+        const pageDescription = createSummaryForSsr(article.content);
+        const imageUrl = extractFirstImageUrlForSsr(article.content);
+        const absoluteImageUrl = imageUrl ? new URL(imageUrl, baseUrl).href : defaultImageUrl;
+        const pageUrl = new URL(req.path, baseUrl).href;
+
+        finalHtml = htmlTemplate
+          .replace(/__OG_TITLE__/g, pageTitle)
+          .replace(/__OG_DESCRIPTION__/g, pageDescription)
+          .replace(/__OG_IMAGE__/g, absoluteImageUrl)
+          .replace(/__OG_URL__/g, pageUrl)
+          .replace(/__OG_TYPE__/g, 'article');
+      } else {
+        // Article not found, serve with default tags but maybe redirect later
+        finalHtml = htmlTemplate
+          .replace(/__OG_TITLE__/g, `記事が見つかりません | ${defaultTitle}`)
+          .replace(/__OG_DESCRIPTION__/g, defaultDescription)
+          .replace(/__OG_IMAGE__/g, defaultImageUrl)
+          .replace(/__OG_URL__/g, new URL(req.path, baseUrl).href)
+          .replace(/__OG_TYPE__/g, 'website');
+      }
+    } else {
+      // It's the homepage or another non-article page
+      finalHtml = htmlTemplate
+        .replace(/__OG_TITLE__/g, defaultTitle)
+        .replace(/__OG_DESCRIPTION__/g, defaultDescription)
+        .replace(/__OG_IMAGE__/g, defaultImageUrl)
+        .replace(/__OG_URL__/g, baseUrl + '/')
+        .replace(/__OG_TYPE__/g, 'website');
+    }
+
+    res.send(finalHtml);
+
+  } catch (error) {
+    console.error("Error during SSR processing:", error);
+    // If something goes wrong (e.g., index.html not found), send a fallback response.
+    if (fs.existsSync(indexPath)) {
+      res.sendFile(indexPath);
+    } else {
+      res.status(404).send('The application has not been built yet. Please run "npm run build".');
+    }
   }
 });
+
 
 app.listen(port, () => {
   console.log(`Server listening on port http://localhost:${port}`);
