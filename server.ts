@@ -1,6 +1,5 @@
-// FIX: Use fully qualified express.Request and express.Response types to prevent
-// conflicts with DOM library types for Request and Response.
-import express from 'express';
+// FIX: Import Request and Response types directly from express to avoid conflicts with DOM library types.
+import express, { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -73,7 +72,8 @@ const db = admin.firestore();
 app.use(express.json());
 
 // --- Dynamic robots.txt Generation ---
-app.get('/robots.txt', (req: express.Request, res: express.Response) => {
+// FIX: Use imported Request and Response types for route handlers.
+app.get('/robots.txt', (req: Request, res: Response) => {
   const baseUrl = process.env.SITE_BASE_URL?.trim();
   if (!baseUrl) {
       console.error('🔴 ERROR: SITE_BASE_URL is not set for robots.txt generation.');
@@ -94,7 +94,8 @@ const sitemapCache = {
 };
 const SITEMAP_CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
 
-app.get('/sitemap.xml', async (req: express.Request, res: express.Response) => {
+// FIX: Use imported Request and Response types for route handlers.
+app.get('/sitemap.xml', async (req: Request, res: Response) => {
   const now = Date.now();
   if (sitemapCache.xml && (now - sitemapCache.timestamp < SITEMAP_CACHE_DURATION)) {
     res.header('Content-Type', 'application/xml');
@@ -148,7 +149,8 @@ app.get('/sitemap.xml', async (req: express.Request, res: express.Response) => {
 // --- NEW: API endpoints for fetching articles ---
 
 // Endpoint to get total article count
-app.get('/api/articles-count', async (req: express.Request, res: express.Response) => {
+// FIX: Use imported Request and Response types for route handlers.
+app.get('/api/articles-count', async (req: Request, res: Response) => {
   try {
     const snapshot = await db.collection('articles').count().get();
     res.json({ count: snapshot.data().count });
@@ -159,7 +161,8 @@ app.get('/api/articles-count', async (req: express.Request, res: express.Respons
 });
 
 // Endpoint to get a paginated list of articles
-app.get('/api/articles', async (req: express.Request, res: express.Response) => {
+// FIX: Use imported Request and Response types for route handlers.
+app.get('/api/articles', async (req: Request, res: Response) => {
   try {
     const { pageSize = '10', startAfter } = req.query;
     const limit = parseInt(pageSize as string, 10);
@@ -191,7 +194,8 @@ app.get('/api/articles', async (req: express.Request, res: express.Response) => 
 });
 
 // Endpoint to get a single article by ID
-app.get('/api/articles/:id', async (req: express.Request, res: express.Response) => {
+// FIX: Use imported Request and Response types for route handlers.
+app.get('/api/articles/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const docRef = db.collection('articles').doc(id);
@@ -212,7 +216,8 @@ app.get('/api/articles/:id', async (req: express.Request, res: express.Response)
 
 
 // --- Gemini API Endpoint ---
-app.post('/api/generate', async (req: express.Request, res: express.Response) => {
+// FIX: Use imported Request and Response types for route handlers.
+app.post('/api/generate', async (req: Request, res: Response) => {
   const { keyword } = req.body;
 
   if (!keyword || typeof keyword !== 'string') {
@@ -309,11 +314,14 @@ const extractFirstImageUrlForSsr = (markdown: string): string | null => {
 const staticDir = path.join(projectRoot, 'dist');
 const indexPath = path.join(staticDir, 'index.html');
 
-// Serve static assets from the 'dist' directory
-app.use(express.static(staticDir));
+// Serve static assets from the 'dist' directory, but prevent it from
+// automatically serving index.html for root requests. This ensures
+// the catch-all route handles OGP tag replacement for the homepage.
+app.use(express.static(staticDir, { index: false }));
 
 // This catch-all route handles all page loads, including direct navigation to article pages.
-app.get('*', async (req: express.Request, res: express.Response) => {
+// FIX: Use imported Request and Response types for route handlers.
+app.get('*', async (req: Request, res: Response) => {
   try {
     const htmlTemplate = await fs.promises.readFile(indexPath, 'utf-8');
 
