@@ -1,5 +1,6 @@
 // FIX: Import Request and Response types directly from express to avoid conflicts with DOM library types.
-import express, { Request, Response } from 'express';
+// FIX: Aliased Request and Response to avoid conflicts with DOM types.
+import express, { Request as ExpressRequest, Response as ExpressResponse } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -68,12 +69,17 @@ try {
 const app = express();
 const port = process.env.PORT || 8080;
 const db = admin.firestore();
+const staticDir = path.join(projectRoot, 'dist');
+const indexPath = path.join(staticDir, 'index.html');
+
 
 app.use(express.json());
 
-// --- Dynamic robots.txt Generation ---
-// FIX: Use imported Request and Response types for route handlers.
-app.get('/robots.txt', (req: Request, res: Response) => {
+// --- API Routes (should come before SSR and static serving) ---
+
+// Dynamic robots.txt Generation
+// FIX: Use aliased ExpressRequest and ExpressResponse types.
+app.get('/robots.txt', (req: ExpressRequest, res: ExpressResponse) => {
   const baseUrl = process.env.SITE_BASE_URL?.trim();
   if (!baseUrl) {
       console.error('🔴 ERROR: SITE_BASE_URL is not set for robots.txt generation.');
@@ -94,8 +100,8 @@ const sitemapCache = {
 };
 const SITEMAP_CACHE_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
 
-// FIX: Use imported Request and Response types for route handlers.
-app.get('/sitemap.xml', async (req: Request, res: Response) => {
+// FIX: Use aliased ExpressRequest and ExpressResponse types.
+app.get('/sitemap.xml', async (req: ExpressRequest, res: ExpressResponse) => {
   const now = Date.now();
   if (sitemapCache.xml && (now - sitemapCache.timestamp < SITEMAP_CACHE_DURATION)) {
     res.header('Content-Type', 'application/xml');
@@ -146,11 +152,9 @@ app.get('/sitemap.xml', async (req: Request, res: Response) => {
   }
 });
 
-// --- NEW: API endpoints for fetching articles ---
-
-// Endpoint to get total article count
-// FIX: Use imported Request and Response types for route handlers.
-app.get('/api/articles-count', async (req: Request, res: Response) => {
+// API endpoints for fetching articles
+// FIX: Use aliased ExpressRequest and ExpressResponse types.
+app.get('/api/articles-count', async (req: ExpressRequest, res: ExpressResponse) => {
   try {
     const snapshot = await db.collection('articles').count().get();
     res.json({ count: snapshot.data().count });
@@ -160,9 +164,8 @@ app.get('/api/articles-count', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint to get a paginated list of articles
-// FIX: Use imported Request and Response types for route handlers.
-app.get('/api/articles', async (req: Request, res: Response) => {
+// FIX: Use aliased ExpressRequest and ExpressResponse types.
+app.get('/api/articles', async (req: ExpressRequest, res: ExpressResponse) => {
   try {
     const { pageSize = '10', startAfter } = req.query;
     const limit = parseInt(pageSize as string, 10);
@@ -193,9 +196,8 @@ app.get('/api/articles', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint to get a single article by ID
-// FIX: Use imported Request and Response types for route handlers.
-app.get('/api/articles/:id', async (req: Request, res: Response) => {
+// FIX: Use aliased ExpressRequest and ExpressResponse types.
+app.get('/api/articles/:id', async (req: ExpressRequest, res: ExpressResponse) => {
   try {
     const { id } = req.params;
     const docRef = db.collection('articles').doc(id);
@@ -214,10 +216,9 @@ app.get('/api/articles/:id', async (req: Request, res: Response) => {
   }
 });
 
-
-// --- Gemini API Endpoint ---
-// FIX: Use imported Request and Response types for route handlers.
-app.post('/api/generate', async (req: Request, res: Response) => {
+// Gemini API Endpoint
+// FIX: Use aliased ExpressRequest and ExpressResponse types.
+app.post('/api/generate', async (req: ExpressRequest, res: ExpressResponse) => {
   const { keyword } = req.body;
 
   if (!keyword || typeof keyword !== 'string') {
@@ -257,10 +258,10 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     let content = responseText;
     
       const titleIndex = lines.findIndex(line => line.startsWith('# '));
-      if (titleIndex !== -1) {
+    if (titleIndex !== -1) {
         title = lines[titleIndex].substring(2).trim();
         content = lines.slice(titleIndex + 1).join('\n').trim();
-      }
+    }
     // --- ---
     
     // --- Extract grounding sources ---
@@ -309,19 +310,9 @@ const extractFirstImageUrlForSsr = (markdown: string): string | null => {
   return htmlMatch ? htmlMatch[1] : null;
 };
 
-
-// --- Static File Serving & SSR for OGP ---
-const staticDir = path.join(projectRoot, 'dist');
-const indexPath = path.join(staticDir, 'index.html');
-
-// Serve static assets from the 'dist' directory, but prevent it from
-// automatically serving index.html for root requests. This ensures
-// the catch-all route handles OGP tag replacement for the homepage.
-app.use(express.static(staticDir, { index: false }));
-
-// This catch-all route handles all page loads, including direct navigation to article pages.
-// FIX: Use imported Request and Response types for route handlers.
-app.get('*', async (req: Request, res: Response) => {
+// --- SSR Handler for OGP Tags ---
+// FIX: Use aliased ExpressRequest and ExpressResponse types.
+const handleSsr = async (req: ExpressRequest, res: ExpressResponse) => {
   try {
     const htmlTemplate = await fs.promises.readFile(indexPath, 'utf-8');
 
@@ -375,15 +366,27 @@ app.get('*', async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error("Error during SSR processing:", error);
-    // If something goes wrong (e.g., index.html not found), send a fallback response.
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(404).send('The application has not been built yet. Please run "npm run build".');
-    }
+    res.status(500).sendFile(indexPath);
+  }
+};
+
+// --- Routing Order ---
+// 1. OGP-sensitive routes are handled by SSR first.
+app.get('/', handleSsr);
+app.get('/article/:id', handleSsr);
+
+// 2. Static assets are served next.
+app.use(express.static(staticDir));
+
+// 3. A final catch-all for client-side routes (e.g., /edit, /new)
+//    sends the app shell and lets React take over.
+app.get('*', (req, res) => {
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    res.status(404).send('The application has not been built yet. Please run "npm run build".');
   }
 });
-
 
 app.listen(port, () => {
   console.log(`Server listening on port http://localhost:${port}`);
