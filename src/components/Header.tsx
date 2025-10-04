@@ -1,5 +1,5 @@
 import React from 'react';
-import { WriteIcon, ListIcon, CherryBlossomIcon } from './icons';
+import { WriteIcon, ListIcon, CherryBlossomIcon, SpinnerIcon, LoginIcon } from './icons';
 import { useAuth } from '../contexts/AuthContext';
 import { signInWithGoogle, signOutUser } from '../services/firebaseService';
 
@@ -8,7 +8,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ navigate }) => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, loading } = useAuth();
 
   const handleNavigation = (e: React.MouseEvent<HTMLAnchorElement>, path: string) => {
     e.preventDefault();
@@ -33,6 +33,40 @@ const Header: React.FC<HeaderProps> = ({ navigate }) => {
       console.error(error);
       alert('ログアウトに失敗しました。');
     }
+  };
+
+  const renderAuthSection = () => {
+    if (loading) {
+      return <SpinnerIcon className="h-6 w-6 text-rose-500" />;
+    }
+    if (user) {
+      return (
+        <div className="flex items-center space-x-2">
+          <img 
+            src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || user.email}&background=random`} 
+            alt={user.displayName || 'User'} 
+            className="h-8 w-8 rounded-full" 
+            referrerPolicy="no-referrer"
+          />
+          <button 
+            onClick={handleLogout} 
+            className="px-3 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-md transition-colors"
+          >
+            ログアウト
+          </button>
+        </div>
+      );
+    }
+    return (
+      <button 
+        onClick={handleLogin} 
+        className="p-2 text-stone-600 hover:bg-stone-100 rounded-full transition-colors"
+        aria-label="管理者ログイン"
+        title="管理者ログイン"
+      >
+        <LoginIcon className="h-6 w-6" />
+      </button>
+    );
   };
 
   return (
@@ -66,29 +100,7 @@ const Header: React.FC<HeaderProps> = ({ navigate }) => {
             <ListIcon className="h-5 w-5" />
             <span className="hidden sm:inline">記事一覧</span>
           </a>
-          {user ? (
-            <div className="flex items-center space-x-2">
-              <img 
-                src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || user.email}&background=random`} 
-                alt={user.displayName || 'User'} 
-                className="h-8 w-8 rounded-full" 
-                referrerPolicy="no-referrer"
-              />
-              <button 
-                onClick={handleLogout} 
-                className="px-3 py-2 text-sm font-medium text-stone-600 hover:bg-stone-100 rounded-md transition-colors"
-              >
-                ログアウト
-              </button>
-            </div>
-          ) : (
-            <button 
-              onClick={handleLogin} 
-              className="px-4 py-2 text-sm font-medium text-white bg-rose-500 hover:bg-rose-600 rounded-md transition-colors shadow-sm"
-            >
-              管理者ログイン
-            </button>
-          )}
+          {renderAuthSection()}
         </nav>
       </div>
     </header>

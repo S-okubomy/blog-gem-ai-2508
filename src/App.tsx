@@ -36,7 +36,7 @@ const createSummary = (markdown: string, length: number = 120): string => {
 
 
 const App: React.FC = () => {
-  const { isAdmin, loading: authLoading } = useAuth();
+  const { isAdmin } = useAuth();
   const [view, setView] = useState<View>('list');
   const [articles, setArticles] = useState<Article[]>([]);
   const [currentArticle, setCurrentArticle] = useState<Article | null>(null);
@@ -375,11 +375,12 @@ const App: React.FC = () => {
 
 
   const renderContent = () => {
-    if (authLoading || (isListLoading && view !== 'editing')) {
+    // Auth loading is now handled in the header to avoid a full-screen blocker.
+    if (isListLoading && view !== 'editing') {
       return (
         <div className="flex justify-center items-center py-10">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-rose-500"></div>
-            <span className="ml-4 text-gray-600">{authLoading ? '認証情報を読み込んでいます...' : '記事を読み込んでいます...'}</span>
+            <span className="ml-4 text-gray-600">読み込み中...</span>
         </div>
       )
     }
